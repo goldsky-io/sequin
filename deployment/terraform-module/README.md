@@ -21,12 +21,15 @@ module "sequin" {
   source = "git::https://github.com/goldsky/sequin.git//deployment/terraform-module?ref=v1.0.0"
 
   # Required
-  ec2_key_name = "my-keypair"
-  image_tag    = "v0.9.0"
+  image_tag = "v0.9.0"
 
   # Optional - defaults to us-west-2
   aws_region = "us-west-2"
   availability_zones = ["us-west-2a", "us-west-2b"]
+
+  # Optional - only needed if you want a bastion host
+  create_bastion = false  # Skip bastion if you have existing access
+  # ec2_key_name = "my-keypair"  # Required only if create_bastion = true
 }
 ```
 
@@ -37,8 +40,7 @@ module "sequin" {
   source = "git::https://github.com/goldsky/sequin.git//deployment/terraform-module?ref=v1.0.0"
 
   # Required
-  ec2_key_name = "my-keypair"
-  image_tag    = "v0.9.0"
+  image_tag = "v0.9.0"
 
   # Use existing infrastructure
   create_vpc         = false
@@ -117,7 +119,7 @@ module "sequin" {
 |------|-------------|------|---------|:--------:|
 | aws_region | AWS region for deployment | `string` | `"us-west-2"` | no |
 | availability_zones | List of availability zones | `list(string)` | `["us-west-2a", "us-west-2b"]` | no |
-| ec2_key_name | AWS Key Pair name for EC2 SSH access | `string` | n/a | yes |
+| ec2_key_name | AWS Key Pair name for EC2 SSH access (required only if create_bastion = true) | `string` | `null` | no |
 | image_tag | Git commit SHA or Sequin version tag | `string` | n/a | yes |
 | create_vpc | Whether to create a new VPC | `bool` | `true` | no |
 | vpc_id | Existing VPC ID (required if create_vpc = false) | `string` | `null` | no |

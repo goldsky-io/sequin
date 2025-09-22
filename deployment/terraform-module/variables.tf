@@ -81,8 +81,9 @@ variable "ec2_allowed_ingress_cidr_blocks" {
 # ==============================================================================
 
 variable "ec2_key_name" {
-  description = "AWS Key Pair name for EC2 SSH access. Create with: aws ec2 create-key-pair --key-name sequin-key"
+  description = "AWS Key Pair name for EC2 SSH access. Required only if create_bastion = true. Create with: aws ec2 create-key-pair --key-name sequin-key"
   type        = string
+  default     = null
 }
 
 variable "architecture" {

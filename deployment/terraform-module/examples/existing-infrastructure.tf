@@ -61,8 +61,7 @@ module "sequin" {
   source = "../"  # In real usage: "git::https://github.com/goldsky/sequin.git//deployment/terraform-module?ref=v1.0.0"
 
   # Required variables
-  ec2_key_name = "production-keypair"
-  image_tag    = "v0.9.0"
+  image_tag = "v0.9.0"
 
   # Use existing VPC and subnets
   create_vpc         = false

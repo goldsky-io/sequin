@@ -73,6 +73,9 @@ locals {
     "redis://${aws_elasticache_cluster.sequin-main[0].cache_nodes[0].address}:6379"
   ) : var.external_redis_url
 
+  # Validation: Ensure ec2_key_name is provided when bastion is enabled
+  validate_key_name = var.create_bastion && var.ec2_key_name == null ? tobool("ec2_key_name is required when create_bastion = true") : true
+
   # Common tags
   common_tags = merge(var.common_tags, {
     Module = "sequin-ecs-sqs"
@@ -1038,7 +1041,7 @@ resource "aws_launch_template" "sequin-main" {
 
   image_id      = data.aws_ssm_parameter.sequin-ami-ecs.value
   instance_type = var.ecs_instance_type
-  key_name      = var.ec2_key_name
+  key_name      = var.ec2_key_name != null ? var.ec2_key_name : null
 
   monitoring {
     enabled = "true"

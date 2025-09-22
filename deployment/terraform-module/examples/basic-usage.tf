@@ -19,8 +19,7 @@ module "sequin" {
   source = "../"  # In real usage: "git::https://github.com/goldsky/sequin.git//deployment/terraform-module?ref=v1.0.0"
 
   # Required variables
-  ec2_key_name = "my-keypair"  # Replace with your key pair name
-  image_tag    = "v0.9.0"      # Replace with desired Sequin version
+  image_tag = "v0.9.0"  # Replace with desired Sequin version
 
   # Regional configuration
   aws_region = "us-west-2"
@@ -46,8 +45,9 @@ module "sequin" {
   memory_reservation = 1024
   image_repository = "sequin/sequin"
 
-  # Optional: Disable bastion host if not needed
-  create_bastion = true
+  # Optional: Enable bastion host for SSH access
+  create_bastion = false  # Set to true if you need SSH access
+  # ec2_key_name = "my-keypair"  # Required only if create_bastion = true
 
   # Optional: SSL certificate for HTTPS
   # ssl_certificate_arn = "arn:aws:acm:us-west-2:123456789012:certificate/12345678-1234-1234-1234-123456789012"
