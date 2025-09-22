@@ -1262,6 +1262,34 @@ resource "aws_ecs_task_definition" "sequin-main" {
           value = "7376"
         },
         {
+          name  = "SERVER_HOST"
+          value = aws_lb.sequin-main.dns_name
+        },
+        {
+          name  = "API_HOST"
+          value = aws_lb.sequin-main.dns_name
+        },
+        {
+          name  = "FEATURE_ACCOUNT_SELF_SIGNUP"
+          value = "false"
+        },
+        {
+          name  = "DEFAULT_WORKERS_PER_SINK"
+          value = "96"
+        },
+        {
+          name  = "PG_POOL_SIZE"
+          value = tostring(var.pg_pool_size)
+        },
+        {
+          name  = "GITHUB_CLIENT_REDIRECT_URI"
+          value = ""
+        },
+        {
+          name  = "REPLICATION_FLUSH_MAX_ACCUMULATED_TIME_MS"
+          value = "200"
+        },
+        {
           name  = "HTTP_PUSH_VIA_SQS_NEW_SINKS"
           value = "true"
         },
@@ -1276,6 +1304,14 @@ resource "aws_ecs_task_definition" "sequin-main" {
         {
           name  = "HTTP_PUSH_VIA_SQS_REGION"
           value = var.aws_region
+        },
+        {
+          name  = "HTTP_POOL_SIZE"
+          value = "250"
+        },
+        {
+          name  = "HTTP_POOL_COUNT"
+          value = "2"
         }
       ]
 

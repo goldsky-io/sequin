@@ -44,6 +44,7 @@ module "sequin" {
   memory = 2048
   memory_reservation = 1024
   image_repository = "sequin/sequin"
+  pg_pool_size = 200  # Adjust based on your database capacity
 
   # Optional: Enable bastion host for SSH access
   create_bastion = false  # Set to true if you need SSH access

@@ -140,6 +140,17 @@ variable "memory_reservation" {
   default     = 1024
 }
 
+variable "pg_pool_size" {
+  type        = number
+  description = "PostgreSQL connection pool size. Recommended: 50-100 for small instances, 200+ for larger instances"
+  default     = 200
+
+  validation {
+    condition     = var.pg_pool_size >= 10 && var.pg_pool_size <= 1000
+    error_message = "PostgreSQL pool size must be between 10 and 1000."
+  }
+}
+
 # ==============================================================================
 # DATABASE CONFIGURATION
 # ==============================================================================
