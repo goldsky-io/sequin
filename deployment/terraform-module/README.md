@@ -127,6 +127,9 @@ module "sequin" {
 | external_pg_url | External PostgreSQL connection URL | `string` | `null` | no |
 | create_redis | Whether to create a new ElastiCache Redis | `bool` | `true` | no |
 | external_redis_url | External Redis connection URL | `string` | `null` | no |
+| enable_deletion_protection | Enable deletion protection for RDS and KMS resources | `bool` | `true` | no |
+| skip_final_snapshot | Skip final RDS snapshot when destroying | `bool` | `false` | no |
+| final_snapshot_identifier | Name of final RDS snapshot (auto-generated if not provided) | `string` | `null` | no |
 | ssl_certificate_arn | ARN of SSL certificate for HTTPS | `string` | `""` | no |
 | name_prefix | Prefix for resource names | `string` | `"sequin"` | no |
 

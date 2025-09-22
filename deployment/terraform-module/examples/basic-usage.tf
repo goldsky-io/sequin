@@ -49,6 +49,10 @@ module "sequin" {
   create_bastion = false  # Set to true if you need SSH access
   # ec2_key_name = "my-keypair"  # Required only if create_bastion = true
 
+  # Optional: Dev environment settings (easier cleanup)
+  enable_deletion_protection = false  # Set to true for production
+  skip_final_snapshot = true          # Set to false for production
+
   # Optional: SSL certificate for HTTPS
   # ssl_certificate_arn = "arn:aws:acm:us-west-2:123456789012:certificate/12345678-1234-1234-1234-123456789012"
 }

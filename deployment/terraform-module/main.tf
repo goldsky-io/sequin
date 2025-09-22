@@ -851,7 +851,7 @@ resource "aws_kms_key" "sequin-rds-encryption-key" {
   enable_key_rotation     = true
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = var.enable_deletion_protection
   }
 
   tags = local.common_tags
@@ -870,7 +870,7 @@ resource "aws_db_instance" "sequin-database" {
   copy_tags_to_snapshot                 = "true"
   customer_owned_ip_enabled             = "false"
   db_subnet_group_name                  = aws_db_subnet_group.sequin-default-group[0].name
-  deletion_protection                   = "true"
+  deletion_protection                   = var.enable_deletion_protection
   engine                                = "postgres"
   engine_version                        = "17.6"
   iam_database_authentication_enabled   = "false"
@@ -896,9 +896,15 @@ resource "aws_db_instance" "sequin-database" {
 
   password = random_password.db_password[0].result
 
+  # Snapshot configuration
+  skip_final_snapshot       = var.skip_final_snapshot
+  final_snapshot_identifier = var.skip_final_snapshot ? null : (
+    var.final_snapshot_identifier != null ? var.final_snapshot_identifier : "${var.name_prefix}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
+  )
+
   lifecycle {
-    prevent_destroy = true
-    ignore_changes  = [password]
+    prevent_destroy = var.enable_deletion_protection
+    ignore_changes  = [password, final_snapshot_identifier]
   }
 
   tags = merge(local.common_tags, {

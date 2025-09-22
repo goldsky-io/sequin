@@ -181,6 +181,24 @@ variable "rds_max_allocated_storage" {
   default     = 100
 }
 
+variable "enable_deletion_protection" {
+  description = "Enable deletion protection for RDS and KMS resources. Disable for dev environments to allow easy cleanup."
+  type        = bool
+  default     = true
+}
+
+variable "skip_final_snapshot" {
+  description = "Skip final RDS snapshot when destroying. Set to true for dev environments."
+  type        = bool
+  default     = false
+}
+
+variable "final_snapshot_identifier" {
+  description = "Name of final RDS snapshot when destroying (required if skip_final_snapshot = false)"
+  type        = string
+  default     = null
+}
+
 # ==============================================================================
 # REDIS CONFIGURATION
 # ==============================================================================
