@@ -160,7 +160,7 @@ variable "external_pg_url" {
 variable "db_name" {
   description = "Name of the PostgreSQL database to create"
   type        = string
-  default     = "sequin_prod"
+  default     = "sequin"
 }
 
 variable "rds_instance_type" {

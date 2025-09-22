@@ -114,17 +114,17 @@ output "ecs_instance_role_arn" {
 
 output "rds_endpoint" {
   description = "RDS PostgreSQL endpoint (if created)"
-  value       = var.create_rds ? aws_db_instance.sequin-prod[0].endpoint : null
+  value       = var.create_rds ? aws_db_instance.sequin-database[0].endpoint : null
 }
 
 output "rds_port" {
   description = "RDS PostgreSQL port (if created)"
-  value       = var.create_rds ? aws_db_instance.sequin-prod[0].port : null
+  value       = var.create_rds ? aws_db_instance.sequin-database[0].port : null
 }
 
 output "rds_database_name" {
   description = "RDS database name (if created)"
-  value       = var.create_rds ? aws_db_instance.sequin-prod[0].db_name : null
+  value       = var.create_rds ? aws_db_instance.sequin-database[0].db_name : null
 }
 
 output "sequin_pg_url" {

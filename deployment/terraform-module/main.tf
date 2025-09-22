@@ -66,7 +66,7 @@ locals {
 
   # Database and Redis URLs - use external or created
   pg_url = var.create_rds ? (
-    "postgres://postgres:${random_password.db_password[0].result}@${aws_db_instance.sequin-prod[0].endpoint}/${var.db_name}"
+    "postgres://postgres:${random_password.db_password[0].result}@${aws_db_instance.sequin-database[0].endpoint}/${var.db_name}"
   ) : var.external_pg_url
 
   redis_url = var.create_redis ? (
@@ -805,12 +805,12 @@ resource "random_password" "db_password" {
   override_special = "!#$%&*()-_=+[]{}<>?."
 }
 
-resource "aws_db_parameter_group" "sequin-prod-pg-17" {
+resource "aws_db_parameter_group" "sequin-database-pg-17" {
   count = var.create_rds ? 1 : 0
 
-  description = "For ${var.name_prefix}-prod"
+  description = "For ${var.name_prefix} database"
   family      = "postgres17"
-  name        = "${var.name_prefix}-prod-params-pg17"
+  name        = "${var.name_prefix}-params-pg17"
 
   parameter {
     apply_method = "pending-reboot"
@@ -857,7 +857,7 @@ resource "aws_kms_key" "sequin-rds-encryption-key" {
   tags = local.common_tags
 }
 
-resource "aws_db_instance" "sequin-prod" {
+resource "aws_db_instance" "sequin-database" {
   count = var.create_rds ? 1 : 0
 
   allocated_storage                     = var.rds_allocated_storage
@@ -874,7 +874,7 @@ resource "aws_db_instance" "sequin-prod" {
   engine                                = "postgres"
   engine_version                        = "17.6"
   iam_database_authentication_enabled   = "false"
-  identifier                            = "${var.name_prefix}-prod"
+  identifier                            = "${var.name_prefix}-database"
   instance_class                        = var.rds_instance_type
   maintenance_window                    = "thu:11:11-thu:11:41"
   max_allocated_storage                 = var.rds_max_allocated_storage
@@ -882,7 +882,7 @@ resource "aws_db_instance" "sequin-prod" {
   monitoring_role_arn                   = aws_iam_role.sequin-rds-monitoring-role[0].arn
   multi_az                              = "false"
   network_type                          = "IPV4"
-  parameter_group_name                  = aws_db_parameter_group.sequin-prod-pg-17[0].name
+  parameter_group_name                  = aws_db_parameter_group.sequin-database-pg-17[0].name
   performance_insights_enabled          = "true"
   performance_insights_kms_key_id       = aws_kms_key.sequin-rds-encryption-key[0].arn
   performance_insights_retention_period = "7"
@@ -902,7 +902,7 @@ resource "aws_db_instance" "sequin-prod" {
   }
 
   tags = merge(local.common_tags, {
-    Name = "${var.name_prefix}-prod-database"
+    Name = "${var.name_prefix}-database"
   })
 }
 
