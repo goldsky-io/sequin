@@ -690,7 +690,7 @@ resource "aws_lb" "sequin-main" {
   security_groups    = [aws_security_group.sequin-alb-sg.id]
   subnets            = local.public_subnet_ids
 
-  ip_address_type = "dualstack"
+  ip_address_type = "ipv4"
 
   tags = merge(local.common_tags, {
     Name = "${var.name_prefix}-main-lb"
