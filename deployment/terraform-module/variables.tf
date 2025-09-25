@@ -210,6 +210,12 @@ variable "final_snapshot_identifier" {
   default     = null
 }
 
+variable "additional_rds_security_group_ids" {
+  description = "Additional security group IDs to attach to the RDS instance"
+  type        = list(string)
+  default     = []
+}
+
 # ==============================================================================
 # REDIS CONFIGURATION
 # ==============================================================================

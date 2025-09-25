@@ -957,7 +957,7 @@ resource "aws_db_instance" "sequin-database" {
   kms_key_id                            = aws_kms_key.sequin-rds-encryption-key[0].arn
   storage_type                          = "gp3"
   username                              = "postgres"
-  vpc_security_group_ids                = [aws_security_group.sequin-rds-sg[0].id]
+  vpc_security_group_ids                = concat([aws_security_group.sequin-rds-sg[0].id], var.additional_rds_security_group_ids)
 
   password = random_password.db_password[0].result
 
@@ -1012,7 +1012,7 @@ resource "aws_db_instance" "sequin-database-no-protection" {
   kms_key_id                            = aws_kms_key.sequin-rds-encryption-key[0].arn
   storage_type                          = "gp3"
   username                              = "postgres"
-  vpc_security_group_ids                = [aws_security_group.sequin-rds-sg[0].id]
+  vpc_security_group_ids                = concat([aws_security_group.sequin-rds-sg[0].id], var.additional_rds_security_group_ids)
 
   password = random_password.db_password[0].result
 
