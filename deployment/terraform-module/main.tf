@@ -65,11 +65,7 @@ locals {
   primary_private_subnet_id = local.private_subnet_ids[0]
 
   # Database and Redis URLs - use external or created
-  pg_url = var.create_rds ? (
-    var.enable_deletion_protection ?
-    "postgres://postgres:${random_password.db_password[0].result}@${aws_db_instance.sequin-database[0].endpoint}/${var.db_name}" :
-    "postgres://postgres:${random_password.db_password[0].result}@${aws_db_instance.sequin-database-no-protection[0].endpoint}/${var.db_name}"
-  ) : var.external_pg_url
+  pg_url = var.create_rds ? "postgres://postgres:${random_password.db_password[0].result}@${aws_db_instance.sequin-database[0].endpoint}/${var.db_name}" : var.external_pg_url
 
   redis_url = var.create_redis ? (
     "redis://${aws_elasticache_cluster.sequin-main[0].cache_nodes[0].address}:6379"
@@ -923,7 +919,7 @@ resource "aws_kms_key" "sequin-rds-encryption-key" {
 }
 
 resource "aws_db_instance" "sequin-database" {
-  count = var.create_rds && var.enable_deletion_protection ? 1 : 0
+  count = var.create_rds ? 1 : 0
 
   allocated_storage                     = var.rds_allocated_storage
   auto_minor_version_upgrade            = "true"
@@ -935,62 +931,7 @@ resource "aws_db_instance" "sequin-database" {
   copy_tags_to_snapshot                 = "true"
   customer_owned_ip_enabled             = "false"
   db_subnet_group_name                  = aws_db_subnet_group.sequin-default-group[0].name
-  deletion_protection                   = true
-  engine                                = "postgres"
-  engine_version                        = "17.6"
-  iam_database_authentication_enabled   = "false"
-  identifier                            = "${var.name_prefix}-database"
-  instance_class                        = var.rds_instance_type
-  maintenance_window                    = "thu:11:11-thu:11:41"
-  max_allocated_storage                 = var.rds_max_allocated_storage
-  monitoring_interval                   = "60"
-  monitoring_role_arn                   = aws_iam_role.sequin-rds-monitoring-role[0].arn
-  multi_az                              = "false"
-  network_type                          = "IPV4"
-  parameter_group_name                  = aws_db_parameter_group.sequin-database-pg-17[0].name
-  performance_insights_enabled          = "true"
-  performance_insights_kms_key_id       = aws_kms_key.sequin-rds-encryption-key[0].arn
-  performance_insights_retention_period = "7"
-  port                                  = "5432"
-  publicly_accessible                   = "false"
-  storage_encrypted                     = "true"
-  kms_key_id                            = aws_kms_key.sequin-rds-encryption-key[0].arn
-  storage_type                          = "gp3"
-  username                              = "postgres"
-  vpc_security_group_ids                = concat([aws_security_group.sequin-rds-sg[0].id], var.additional_rds_security_group_ids)
-
-  password = random_password.db_password[0].result
-
-  # Snapshot configuration
-  skip_final_snapshot = var.skip_final_snapshot
-  final_snapshot_identifier = var.skip_final_snapshot ? null : (
-    var.final_snapshot_identifier != null ? var.final_snapshot_identifier : "${var.name_prefix}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
-  )
-
-  lifecycle {
-    prevent_destroy = true
-    ignore_changes  = [password, final_snapshot_identifier]
-  }
-
-  tags = merge(local.common_tags, {
-    Name = "${var.name_prefix}-database"
-  })
-}
-
-resource "aws_db_instance" "sequin-database-no-protection" {
-  count = var.create_rds && !var.enable_deletion_protection ? 1 : 0
-
-  allocated_storage                     = var.rds_allocated_storage
-  auto_minor_version_upgrade            = "true"
-  availability_zone                     = var.availability_zones[0]
-  backup_retention_period               = "7"
-  backup_window                         = "11:43-12:13"
-  db_name                               = var.db_name
-  ca_cert_identifier                    = "rds-ca-rsa2048-g1"
-  copy_tags_to_snapshot                 = "true"
-  customer_owned_ip_enabled             = "false"
-  db_subnet_group_name                  = aws_db_subnet_group.sequin-default-group[0].name
-  deletion_protection                   = false
+  deletion_protection                   = var.enable_deletion_protection
   engine                                = "postgres"
   engine_version                        = "17.6"
   iam_database_authentication_enabled   = "false"
