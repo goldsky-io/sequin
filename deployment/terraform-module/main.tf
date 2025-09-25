@@ -61,7 +61,7 @@ locals {
   ] : var.private_subnet_ids
 
   # Primary subnets for single-AZ resources
-  primary_public_subnet_id = local.public_subnet_ids[0]
+  primary_public_subnet_id  = local.public_subnet_ids[0]
   primary_private_subnet_id = local.private_subnet_ids[0]
 
   # Database and Redis URLs - use external or created
@@ -306,6 +306,14 @@ resource "aws_security_group" "sequin-ecs-sg" {
     security_groups = [aws_security_group.sequin-alb-sg.id]
   }
 
+  ingress {
+    description     = "Allow inbound traffic from ALB for metrics"
+    from_port       = 8376
+    to_port         = 8376
+    protocol        = "tcp"
+    security_groups = [aws_security_group.sequin-alb-sg.id]
+  }
+
   tags = merge(local.common_tags, {
     Name = "${var.name_prefix}-ecs-sg"
   })
@@ -327,6 +335,14 @@ resource "aws_security_group" "sequin-alb-sg" {
   ingress {
     from_port        = 443
     to_port          = 443
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+  }
+
+  ingress {
+    from_port        = 8376
+    to_port          = 8376
     protocol         = "tcp"
     cidr_blocks      = ["0.0.0.0/0"]
     ipv6_cidr_blocks = ["::/0"]
@@ -599,9 +615,9 @@ resource "aws_sqs_queue" "sequin_http_push_dlq" {
 
 # Create the main HTTP Push queue
 resource "aws_sqs_queue" "sequin_http_push_queue" {
-  name                        = "${var.name_prefix}-http-push-queue"
-  visibility_timeout_seconds  = 60
-  message_retention_seconds   = 1209600 # 14 days (maximum retention)
+  name                       = "${var.name_prefix}-http-push-queue"
+  visibility_timeout_seconds = 60
+  message_retention_seconds  = 1209600 # 14 days (maximum retention)
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.sequin_http_push_dlq.arn
@@ -740,6 +756,19 @@ resource "aws_lb_listener" "sequin-main-443" {
   tags = local.common_tags
 }
 
+resource "aws_lb_listener" "sequin-metrics-8376" {
+  load_balancer_arn = aws_lb.sequin-main.arn
+  port              = "8376"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.sequin-metrics.arn
+  }
+
+  tags = local.common_tags
+}
+
 resource "aws_lb_target_group" "sequin-main" {
   name                 = "${var.name_prefix}-main-tg"
   port                 = 80
@@ -775,6 +804,44 @@ resource "aws_lb_target_group" "sequin-main" {
 
   tags = merge(local.common_tags, {
     Name = "${var.name_prefix}-main-tg"
+  })
+}
+
+resource "aws_lb_target_group" "sequin-metrics" {
+  name                 = "${var.name_prefix}-metrics-tg"
+  port                 = 8376
+  protocol             = "HTTP"
+  vpc_id               = local.vpc_id
+  deregistration_delay = 60
+
+  health_check {
+    enabled             = "true"
+    healthy_threshold   = "2"
+    interval            = "30"
+    matcher             = "200"
+    path                = "/metrics"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = "5"
+    unhealthy_threshold = "5"
+  }
+
+  target_type     = "ip"
+  ip_address_type = "ipv4"
+
+  stickiness {
+    cookie_duration = "86400"
+    enabled         = "false"
+    type            = "lb_cookie"
+  }
+
+  load_balancing_algorithm_type     = "round_robin"
+  load_balancing_cross_zone_enabled = "use_load_balancer_configuration"
+  protocol_version                  = "HTTP1"
+  slow_start                        = "0"
+
+  tags = merge(local.common_tags, {
+    Name = "${var.name_prefix}-metrics-tg"
   })
 }
 
@@ -895,7 +962,7 @@ resource "aws_db_instance" "sequin-database" {
   password = random_password.db_password[0].result
 
   # Snapshot configuration
-  skip_final_snapshot       = var.skip_final_snapshot
+  skip_final_snapshot = var.skip_final_snapshot
   final_snapshot_identifier = var.skip_final_snapshot ? null : (
     var.final_snapshot_identifier != null ? var.final_snapshot_identifier : "${var.name_prefix}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
   )
@@ -950,7 +1017,7 @@ resource "aws_db_instance" "sequin-database-no-protection" {
   password = random_password.db_password[0].result
 
   # Snapshot configuration
-  skip_final_snapshot       = var.skip_final_snapshot
+  skip_final_snapshot = var.skip_final_snapshot
   final_snapshot_identifier = var.skip_final_snapshot ? null : (
     var.final_snapshot_identifier != null ? var.final_snapshot_identifier : "${var.name_prefix}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
   )
@@ -1051,11 +1118,11 @@ resource "aws_autoscaling_group" "sequin-main" {
     version = "$Latest"
   }
 
-  max_instance_lifetime   = "0"
-  max_size                = "2"
-  metrics_granularity     = "1Minute"
-  min_size                = "1"
-  protect_from_scale_in   = "false"
+  max_instance_lifetime = "0"
+  max_size              = "2"
+  metrics_granularity   = "1Minute"
+  min_size              = "1"
+  protect_from_scale_in = "false"
 
   tag {
     key                 = "Name"
@@ -1390,6 +1457,12 @@ resource "aws_ecs_task_definition" "sequin-main" {
           protocol      = "tcp"
         },
         {
+          name          = "${var.name_prefix}-8376-tcp"
+          containerPort = 8376
+          hostPort      = 8376
+          protocol      = "tcp"
+        },
+        {
           name          = "${var.name_prefix}-4369-tcp"
           containerPort = 4369
           hostPort      = 4369
@@ -1462,7 +1535,7 @@ resource "aws_ecs_service" "sequin-main" {
   }
 
   network_configuration {
-    subnets = local.private_subnet_ids
+    subnets         = local.private_subnet_ids
     security_groups = [aws_security_group.sequin-ecs-sg.id]
   }
 
@@ -1470,6 +1543,12 @@ resource "aws_ecs_service" "sequin-main" {
     target_group_arn = aws_lb_target_group.sequin-main.arn
     container_name   = var.name_prefix
     container_port   = 7376
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.sequin-metrics.arn
+    container_name   = var.name_prefix
+    container_port   = 8376
   }
 
   enable_execute_command            = true
