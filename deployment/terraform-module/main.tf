@@ -816,7 +816,7 @@ resource "aws_lb_target_group" "sequin-metrics" {
     interval            = "30"
     matcher             = "200"
     path                = "/health"
-    port                = "traffic-port"
+    port                = "80"
     protocol            = "HTTP"
     timeout             = "5"
     unhealthy_threshold = "5"
