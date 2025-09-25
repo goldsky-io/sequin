@@ -850,7 +850,7 @@ resource "aws_ecs_cluster" "sequin" {
 
   setting {
     name  = "containerInsights"
-    value = "disabled"
+    value = "enhanced"
   }
 
   tags = local.common_tags
