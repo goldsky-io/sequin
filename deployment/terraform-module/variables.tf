@@ -151,6 +151,12 @@ variable "pg_pool_size" {
   }
 }
 
+variable "additional_environment_variables" {
+  description = "Additional environment variables to set in the ECS container"
+  type        = map(string)
+  default     = {}
+}
+
 # ==============================================================================
 # DATABASE CONFIGURATION
 # ==============================================================================

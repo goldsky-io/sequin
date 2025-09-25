@@ -40,11 +40,18 @@ module "sequin" {
   rds_instance_type = "db.m5.large"
   redis_instance_type = "cache.t4g.micro"
 
-  # Optional: Application configuration
-  memory = 2048
-  memory_reservation = 1024
-  image_repository = "sequin/sequin"
-  pg_pool_size = 200  # Adjust based on your database capacity
+   # Optional: Application configuration
+   memory = 2048
+   memory_reservation = 1024
+   image_repository = "sequin/sequin"
+   pg_pool_size = 200  # Adjust based on your database capacity
+
+   # Optional: Custom environment variables (e.g., for metrics auth, feature flags, etc.)
+   additional_environment_variables = {
+     SEQUIN_METRICS_USER     = "metrics-user"
+     SEQUIN_METRICS_PASSWORD = "secure-metrics-password"
+     CUSTOM_FEATURE_FLAG     = "enabled"
+   }
 
   # Optional: Enable bastion host for SSH access
   create_bastion = false  # Set to true if you need SSH access

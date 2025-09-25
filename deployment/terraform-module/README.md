@@ -27,10 +27,16 @@ module "sequin" {
   aws_region = "us-west-2"
   availability_zones = ["us-west-2a", "us-west-2b"]
 
-  # Optional - only needed if you want a bastion host
-  create_bastion = false  # Skip bastion if you have existing access
-  # ec2_key_name = "my-keypair"  # Required only if create_bastion = true
-}
+   # Optional - only needed if you want a bastion host
+   create_bastion = false  # Skip bastion if you have existing access
+   # ec2_key_name = "my-keypair"  # Required only if create_bastion = true
+
+   # Optional - custom environment variables
+   additional_environment_variables = {
+     SEQUIN_METRICS_USER     = "metrics-user"
+     SEQUIN_METRICS_PASSWORD = "secure-password"
+   }
+ }
 ```
 
 ### Advanced Usage (Existing Infrastructure)

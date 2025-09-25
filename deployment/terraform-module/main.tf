@@ -1240,7 +1240,7 @@ resource "aws_ecs_task_definition" "sequin-main" {
       memoryReservation = var.memory_reservation
       cpu               = 0
 
-      environment = [
+      environment = concat([
         {
           name  = "CURRENT_GIT_SHA"
           value = var.image_tag
@@ -1321,7 +1321,7 @@ resource "aws_ecs_task_definition" "sequin-main" {
           name  = "HTTP_POOL_COUNT"
           value = "2"
         }
-      ]
+      ], [for k, v in var.additional_environment_variables : { name = k, value = v }])
 
       secrets = [
         {
