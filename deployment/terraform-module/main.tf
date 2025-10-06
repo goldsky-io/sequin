@@ -1099,6 +1099,19 @@ resource "aws_security_group" "sequin_rds_proxy_sg" {
   })
 }
 
+# Allow RDS Proxy to connect to RDS
+resource "aws_security_group_rule" "rds_proxy_to_rds" {
+  count = var.create_rds ? 1 : 0
+
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.sequin_rds_proxy_sg[0].id
+  security_group_id        = aws_security_group.sequin-rds-sg[0].id
+  description              = "Allow RDS Proxy to connect to RDS"
+}
+
 # IAM role for RDS Proxy
 resource "aws_iam_role" "rds_proxy_role" {
   count = var.create_rds ? 1 : 0
