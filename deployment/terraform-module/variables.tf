@@ -223,6 +223,32 @@ variable "additional_rds_security_group_ids" {
 }
 
 # ==============================================================================
+# RDS PROXY CONFIGURATION
+# ==============================================================================
+
+variable "rds_proxy_max_connections_percent" {
+  description = "Maximum connections percent for RDS Proxy (1-100). RDS Proxy is automatically created when RDS is enabled."
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.rds_proxy_max_connections_percent >= 1 && var.rds_proxy_max_connections_percent <= 100
+    error_message = "RDS Proxy max connections percent must be between 1 and 100."
+  }
+}
+
+variable "rds_proxy_max_idle_connections_percent" {
+  description = "Maximum idle connections percent for RDS Proxy (0-100). RDS Proxy is automatically created when RDS is enabled."
+  type        = number
+  default     = 50
+
+  validation {
+    condition     = var.rds_proxy_max_idle_connections_percent >= 0 && var.rds_proxy_max_idle_connections_percent <= 100
+    error_message = "RDS Proxy max idle connections percent must be between 0 and 100."
+  }
+}
+
+# ==============================================================================
 # REDIS CONFIGURATION
 # ==============================================================================
 

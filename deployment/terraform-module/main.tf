@@ -65,11 +65,81 @@ locals {
   primary_private_subnet_id = local.private_subnet_ids[0]
 
   # Database and Redis URLs - use external or created
-  pg_url = var.create_rds ? "postgres://postgres:${random_password.db_password[0].result}@${aws_db_instance.sequin-database[0].endpoint}/${var.db_name}" : var.external_pg_url
+  pg_url = var.create_rds ? (
+    "postgres://postgres:${random_password.db_password[0].result}@${aws_db_proxy.sequin_proxy[0].endpoint}/${var.db_name}"
+  ) : var.external_pg_url
 
   redis_url = var.create_redis ? (
     "redis://${aws_elasticache_cluster.sequin-main[0].cache_nodes[0].address}:6379"
   ) : var.external_redis_url
+
+  # ECS task secrets
+  ecs_task_secrets = [
+    {
+      name      = "SECRET_KEY_BASE"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:SECRET_KEY_BASE::"
+    },
+    {
+      name      = "ADMIN_PASSWORD"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:ADMIN_PASSWORD::"
+    },
+    {
+      name      = "VAULT_KEY"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:VAULT_KEY::"
+    },
+    {
+      name      = "PG_URL"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:PG_URL::"
+    },
+    {
+      name      = "REDIS_URL"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:REDIS_URL::"
+    },
+    {
+      name      = "GITHUB_CLIENT_ID"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:GITHUB_CLIENT_ID::"
+    },
+    {
+      name      = "GITHUB_CLIENT_SECRET"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:GITHUB_CLIENT_SECRET::"
+    },
+    {
+      name      = "SENDGRID_API_KEY"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:SENDGRID_API_KEY::"
+    },
+    {
+      name      = "RETOOL_WORKFLOW_KEY"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:RETOOL_WORKFLOW_KEY::"
+    },
+    {
+      name      = "LOOPS_API_KEY"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:LOOPS_API_KEY::"
+    },
+    {
+      name      = "DATADOG_API_KEY"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:DATADOG_API_KEY::"
+    },
+    {
+      name      = "DATADOG_APP_KEY"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:DATADOG_APP_KEY::"
+    },
+    {
+      name      = "SENTRY_DSN"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:SENTRY_DSN::"
+    },
+    {
+      name      = "PAGERDUTY_INTEGRATION_KEY"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:PAGERDUTY_INTEGRATION_KEY::"
+    },
+    {
+      name      = "HTTP_PUSH_VIA_SQS_ACCESS_KEY_ID"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:HTTP_PUSH_VIA_SQS_ACCESS_KEY_ID::"
+    },
+    {
+      name      = "HTTP_PUSH_VIA_SQS_SECRET_ACCESS_KEY"
+      valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:HTTP_PUSH_VIA_SQS_SECRET_ACCESS_KEY::"
+    }
+  ]
 
   # Validation: Ensure ec2_key_name is provided when bastion is enabled
   validate_key_name = var.create_bastion && var.ec2_key_name == null ? tobool("ec2_key_name is required when create_bastion = true") : true
@@ -973,6 +1043,153 @@ resource "aws_db_instance" "sequin-database" {
 }
 
 # ==============================================================================
+# RDS PROXY (CONDITIONAL)
+# ==============================================================================
+
+# Separate RDS credentials secret for proxy authentication
+resource "aws_secretsmanager_secret" "rds_credentials" {
+  count = var.create_rds ? 1 : 0
+
+  name        = "${var.name_prefix}/rds-credentials"
+  description = "RDS credentials for proxy authentication"
+
+  tags = merge(local.common_tags, {
+    Name = "${var.name_prefix}-rds-credentials"
+  })
+}
+
+resource "aws_secretsmanager_secret_version" "rds_credentials" {
+  count = var.create_rds ? 1 : 0
+
+  secret_id = aws_secretsmanager_secret.rds_credentials[0].id
+  secret_string = jsonencode({
+    username = "postgres"
+    password = random_password.db_password[0].result
+  })
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}
+
+# Security group for RDS Proxy
+resource "aws_security_group" "sequin_rds_proxy_sg" {
+  count = var.create_rds ? 1 : 0
+
+  name        = "${var.name_prefix}-rds-proxy-sg"
+  description = "Security group for Sequin RDS Proxy"
+  vpc_id      = local.vpc_id
+
+  ingress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.sequin-ecs-sg.id]
+  }
+
+  egress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.sequin-rds-sg[0].id]
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${var.name_prefix}-rds-proxy-sg"
+  })
+}
+
+# IAM role for RDS Proxy
+resource "aws_iam_role" "rds_proxy_role" {
+  count = var.create_rds ? 1 : 0
+
+  name = "${var.name_prefix}-rds-proxy-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "rds.amazonaws.com"
+      }
+    }]
+  })
+
+  tags = merge(local.common_tags, {
+    Name = "${var.name_prefix}-rds-proxy-role"
+  })
+}
+
+# IAM policy for RDS Proxy to access secrets
+resource "aws_iam_role_policy" "rds_proxy_policy" {
+  count = var.create_rds ? 1 : 0
+
+  name = "${var.name_prefix}-rds-proxy-policy"
+  role = aws_iam_role.rds_proxy_role[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "secretsmanager:GetSecretValue"
+      ]
+      Resource = aws_secretsmanager_secret.rds_credentials[0].arn
+    }]
+  })
+}
+
+# RDS Proxy
+resource "aws_db_proxy" "sequin_proxy" {
+  count = var.create_rds ? 1 : 0
+
+  name                   = "${var.name_prefix}-rds-proxy"
+  engine_family         = "POSTGRESQL"
+  require_tls           = true
+  idle_client_timeout   = 1800
+  role_arn              = aws_iam_role.rds_proxy_role[0].arn
+
+  auth {
+    auth_scheme = "SECRETS"
+    secret_arn  = aws_secretsmanager_secret.rds_credentials[0].arn
+  }
+
+  vpc_subnet_ids         = local.private_subnet_ids
+  vpc_security_group_ids = [aws_security_group.sequin_rds_proxy_sg[0].id]
+
+  tags = merge(local.common_tags, {
+    Name = "${var.name_prefix}-rds-proxy"
+  })
+
+  depends_on = [aws_db_instance.sequin-database]
+}
+
+# RDS Proxy target group
+resource "aws_db_proxy_default_target_group" "sequin_proxy_target_group" {
+  count = var.create_rds ? 1 : 0
+
+  db_proxy_name = aws_db_proxy.sequin_proxy[0].name
+
+  connection_pool_config {
+    max_connections_percent      = var.rds_proxy_max_connections_percent
+    max_idle_connections_percent = var.rds_proxy_max_idle_connections_percent
+    session_pinning_filters      = ["EXCLUDE_VARIABLE_SETS"]
+  }
+}
+
+# RDS Proxy target
+resource "aws_db_proxy_target" "sequin_proxy_target" {
+  count = var.create_rds ? 1 : 0
+
+  db_proxy_name         = aws_db_proxy.sequin_proxy[0].name
+  target_group_name     = aws_db_proxy_default_target_group.sequin_proxy_target_group[0].name
+  db_instance_identifier = aws_db_instance.sequin-database[0].identifier
+
+  depends_on = [aws_db_proxy_default_target_group.sequin_proxy_target_group]
+}
+
+# ==============================================================================
 # ELASTICACHE REDIS (CONDITIONAL)
 # ==============================================================================
 
@@ -1323,72 +1540,7 @@ resource "aws_ecs_task_definition" "sequin-main" {
         }
       ], [for k, v in var.additional_environment_variables : { name = k, value = v }])
 
-      secrets = [
-        {
-          name      = "SECRET_KEY_BASE"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:SECRET_KEY_BASE::"
-        },
-        {
-          name      = "ADMIN_PASSWORD"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:ADMIN_PASSWORD::"
-        },
-        {
-          name      = "VAULT_KEY"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:VAULT_KEY::"
-        },
-        {
-          name      = "PG_URL"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:PG_URL::"
-        },
-        {
-          name      = "REDIS_URL"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:REDIS_URL::"
-        },
-        {
-          name      = "GITHUB_CLIENT_ID"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:GITHUB_CLIENT_ID::"
-        },
-        {
-          name      = "GITHUB_CLIENT_SECRET"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:GITHUB_CLIENT_SECRET::"
-        },
-        {
-          name      = "SENDGRID_API_KEY"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:SENDGRID_API_KEY::"
-        },
-        {
-          name      = "RETOOL_WORKFLOW_KEY"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:RETOOL_WORKFLOW_KEY::"
-        },
-        {
-          name      = "LOOPS_API_KEY"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:LOOPS_API_KEY::"
-        },
-        {
-          name      = "DATADOG_API_KEY"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:DATADOG_API_KEY::"
-        },
-        {
-          name      = "DATADOG_APP_KEY"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:DATADOG_APP_KEY::"
-        },
-        {
-          name      = "SENTRY_DSN"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:SENTRY_DSN::"
-        },
-        {
-          name      = "PAGERDUTY_INTEGRATION_KEY"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:PAGERDUTY_INTEGRATION_KEY::"
-        },
-        {
-          name      = "HTTP_PUSH_VIA_SQS_ACCESS_KEY_ID"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:HTTP_PUSH_VIA_SQS_ACCESS_KEY_ID::"
-        },
-        {
-          name      = "HTTP_PUSH_VIA_SQS_SECRET_ACCESS_KEY"
-          valueFrom = "${aws_secretsmanager_secret.sequin-config.arn}:HTTP_PUSH_VIA_SQS_SECRET_ACCESS_KEY::"
-        }
-      ]
+       secrets = local.ecs_task_secrets
 
       portMappings = [
         {

@@ -6,6 +6,7 @@ A comprehensive Terraform module for deploying Sequin with specialized SQS HTTP 
 
 - **Flexible Networking**: Create new VPC/subnets or integrate with existing infrastructure
 - **Database Options**: Create new RDS PostgreSQL instance or use existing database
+- **RDS Proxy**: Automatic RDS Proxy provisioning with RDS for improved connection pooling and resilience
 - **Redis Options**: Create new ElastiCache Redis cluster or use existing Redis
 - **SQS Integration**: Full SQS setup for HTTP push consumers with DLQ support
 - **Security**: Best practices with security groups, encryption, and IAM roles
@@ -76,6 +77,28 @@ module "sequin" {
 }
 ```
 
+### RDS Proxy (Always Enabled with RDS)
+
+When creating an RDS instance, this module automatically provisions an RDS Proxy for improved connection pooling, automatic failover, and reduced database load. RDS Proxy handles connection multiplexing, allowing thousands of application connections while maintaining fewer database connections.
+
+```hcl
+module "sequin" {
+  source = "git::https://github.com/goldsky/sequin.git//deployment/terraform-module?ref=v1.0.0"
+
+  # Required
+  image_tag = "v0.9.0"
+
+  # RDS Proxy connection pool settings (optional)
+  rds_proxy_max_connections_percent      = 90  # Max 90% of available connections
+  rds_proxy_max_idle_connections_percent = 25  # Max 25% idle connections
+
+  # Can reduce PG_POOL_SIZE when using proxy (proxy handles multiplexing)
+  pg_pool_size = 50
+
+  # Other configuration...
+}
+```
+
 ## Requirements
 
 | Name | Version |
@@ -131,6 +154,8 @@ module "sequin" {
 | vpc_id | Existing VPC ID (required if create_vpc = false) | `string` | `null` | no |
 | create_rds | Whether to create a new RDS instance | `bool` | `true` | no |
 | external_pg_url | External PostgreSQL connection URL | `string` | `null` | no |
+| rds_proxy_max_connections_percent | Maximum connections percent for RDS Proxy (1-100). RDS Proxy is automatically created when RDS is enabled. | `number` | `100` | no |
+| rds_proxy_max_idle_connections_percent | Maximum idle connections percent for RDS Proxy (0-100). RDS Proxy is automatically created when RDS is enabled. | `number` | `50` | no |
 | create_redis | Whether to create a new ElastiCache Redis | `bool` | `true` | no |
 | external_redis_url | External Redis connection URL | `string` | `null` | no |
 | enable_deletion_protection | Enable deletion protection for RDS and KMS resources | `bool` | `true` | no |
@@ -181,6 +206,32 @@ const sequin = new TerraformModule(this, "sequin", {
 // Access outputs
 const sequinUrl = sequin.getString("sequin_url");
 ```
+
+## RDS Proxy Considerations
+
+RDS Proxy provides several benefits but adds complexity and cost:
+
+### Benefits
+- **Connection Multiplexing**: Handles thousands of application connections with fewer database connections
+- **Improved Resilience**: Automatic failover and connection management during database maintenance
+- **Reduced Database Load**: Fewer idle connections on the database instance
+- **Better Monitoring**: Enhanced connection metrics and monitoring
+
+### Trade-offs
+- **Additional Cost**: ~$0.015/hour per proxy plus data transfer costs
+- **Minor Latency**: ~1-5ms additional latency per connection
+- **Complexity**: Additional infrastructure component to manage
+
+### When to Use RDS Proxy
+- Multiple Sequin instances connecting to the same database
+- Experiencing connection pool exhaustion
+- High-frequency database operations
+- Need for automatic failover during maintenance
+
+### Configuration Tips
+- Reduce `pg_pool_size` when using proxy (50-100 instead of 200) since proxy handles multiplexing
+- Monitor proxy metrics in CloudWatch for connection usage
+- Consider proxy for production deployments with multiple application instances
 
 ## Security Considerations
 
