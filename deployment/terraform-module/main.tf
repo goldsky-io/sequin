@@ -148,6 +148,28 @@ locals {
   common_tags = merge(var.common_tags, {
     Module = "sequin-ecs-sqs"
   })
+
+  # ECS env defaults and merged map for stable, de-duped env list
+  ecs_env_defaults = {
+    CURRENT_GIT_SHA              = var.image_tag
+    PG_SSL                       = "true"
+    LAUNCH_TYPE                  = "EC2"
+    ADMIN_USER                   = "admin"
+    RELEASE_DISTRIBUTION         = "name"
+    RELEASE_NODE                 = var.name_prefix
+    SERVER_PORT                  = "7376"
+    SERVER_HOST                  = aws_lb.sequin-main.dns_name
+    API_HOST                     = aws_lb.sequin-main.dns_name
+    FEATURE_ACCOUNT_SELF_SIGNUP  = "false"
+    PG_POOL_SIZE                 = tostring(var.pg_pool_size)
+    GITHUB_CLIENT_REDIRECT_URI   = ""
+    HTTP_PUSH_VIA_SQS_NEW_SINKS  = "true"
+    HTTP_PUSH_VIA_SQS_QUEUE_URL  = aws_sqs_queue.sequin_http_push_queue.url
+    HTTP_PUSH_VIA_SQS_DLQ_URL    = aws_sqs_queue.sequin_http_push_dlq.url
+    HTTP_PUSH_VIA_SQS_REGION     = var.aws_region
+  }
+
+  ecs_env_map = merge(local.ecs_env_defaults, var.additional_environment_variables)
 }
 
 # ==============================================================================
@@ -1474,90 +1496,14 @@ resource "aws_ecs_task_definition" "sequin-main" {
       memoryReservation = var.memory_reservation
       cpu               = 0
 
-      environment = concat([
-        {
-          name  = "CURRENT_GIT_SHA"
-          value = var.image_tag
-        },
-        {
-          name  = "PG_SSL"
-          value = "true"
-        },
-        {
-          name  = "LAUNCH_TYPE"
-          value = "EC2"
-        },
-        {
-          name  = "ADMIN_USER"
-          value = "admin"
-        },
-        {
-          name  = "RELEASE_DISTRIBUTION"
-          value = "name"
-        },
-        {
-          name  = "RELEASE_NODE"
-          value = var.name_prefix
-        },
-        {
-          name  = "SERVER_PORT"
-          value = "7376"
-        },
-        {
-          name  = "SERVER_HOST"
-          value = aws_lb.sequin-main.dns_name
-        },
-        {
-          name  = "API_HOST"
-          value = aws_lb.sequin-main.dns_name
-        },
-        {
-          name  = "FEATURE_ACCOUNT_SELF_SIGNUP"
-          value = "false"
-        },
-        {
-          name  = "DEFAULT_WORKERS_PER_SINK"
-          value = "96"
-        },
-        {
-          name  = "PG_POOL_SIZE"
-          value = tostring(var.pg_pool_size)
-        },
-        {
-          name  = "GITHUB_CLIENT_REDIRECT_URI"
-          value = ""
-        },
-        {
-          name  = "REPLICATION_FLUSH_MAX_ACCUMULATED_TIME_MS"
-          value = "200"
-        },
-        {
-          name  = "HTTP_PUSH_VIA_SQS_NEW_SINKS"
-          value = "true"
-        },
-        {
-          name  = "HTTP_PUSH_VIA_SQS_QUEUE_URL"
-          value = aws_sqs_queue.sequin_http_push_queue.url
-        },
-        {
-          name  = "HTTP_PUSH_VIA_SQS_DLQ_URL"
-          value = aws_sqs_queue.sequin_http_push_dlq.url
-        },
-        {
-          name  = "HTTP_PUSH_VIA_SQS_REGION"
-          value = var.aws_region
-        },
-        {
-          name  = "HTTP_POOL_SIZE"
-          value = "250"
-        },
-        {
-          name  = "HTTP_POOL_COUNT"
-          value = "2"
+      environment = [
+        for k in sort(keys(local.ecs_env_map)) : {
+          name  = k
+          value = local.ecs_env_map[k]
         }
-      ], [for k, v in var.additional_environment_variables : { name = k, value = v }])
+      ]
 
-       secrets = local.ecs_task_secrets
+      secrets = local.ecs_task_secrets
 
       portMappings = [
         {
