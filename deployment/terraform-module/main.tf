@@ -491,7 +491,8 @@ resource "aws_security_group" "sequin-rds-sg" {
     protocol  = "tcp"
     security_groups = compact([
       aws_security_group.sequin-ecs-sg.id,
-      var.create_bastion ? aws_security_group.sequin-bastion-sg[0].id : null
+      var.create_bastion ? aws_security_group.sequin-bastion-sg[0].id : null,
+      aws_security_group.sequin_rds_proxy_sg[0].id
     ])
   }
 
@@ -1122,17 +1123,9 @@ resource "aws_security_group" "sequin_rds_proxy_sg" {
 }
 
 # Allow RDS Proxy to connect to RDS
-resource "aws_security_group_rule" "rds_proxy_to_rds" {
-  count = var.create_rds ? 1 : 0
-
-  type                     = "ingress"
-  from_port                = 5432
-  to_port                  = 5432
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.sequin_rds_proxy_sg[0].id
-  security_group_id        = aws_security_group.sequin-rds-sg[0].id
-  description              = "Allow RDS Proxy to connect to RDS"
-}
+## Note: Do not mix inline SG rules with separate aws_security_group_rule resources
+## for the same security group, as it causes perpetual diffs. The RDS proxy ingress
+## is managed inline above by adding sequin_rds_proxy_sg to security_groups.
 
 # IAM role for RDS Proxy
 resource "aws_iam_role" "rds_proxy_role" {
