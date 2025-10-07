@@ -1165,7 +1165,11 @@ resource "aws_db_proxy" "sequin_proxy" {
 
   auth {
     auth_scheme = "SECRETS"
-    secret_arn  = aws_secretsmanager_secret.rds_credentials[0].arn
+    # Make auth config explicit to avoid perpetual diffs
+    # AWS defaults can appear in state; set them here for stability
+    iam_auth                   = "DISABLED"
+    client_password_auth_type = "POSTGRES_SCRAM_SHA_256"
+    secret_arn                = aws_secretsmanager_secret.rds_credentials[0].arn
   }
 
   vpc_subnet_ids         = local.private_subnet_ids
