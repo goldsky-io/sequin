@@ -78,7 +78,9 @@ config :sequin, Sequin.Consumers.HttpPushSink,
 # Configure the SQS pipeline with credentials
 config :sequin, Sequin.Runtime.HttpPushSqsPipeline,
   sqs: sqs_config,
-  discards_disabled?: System.get_env("HTTP_PUSH_VIA_SQS_DISCARDS_DISABLED") in ~w(true 1)
+  discards_disabled?: System.get_env("HTTP_PUSH_VIA_SQS_DISCARDS_DISABLED") in ~w(true 1),
+  worker_concurrency: String.to_integer(System.get_env("HTTP_PUSH_VIA_SQS_WORKER_CONCURRENCY", "1000")),
+  producer_concurrency: String.to_integer(System.get_env("HTTP_PUSH_VIA_SQS_PRODUCER_CONCURRENCY", "10"))
 
 config :sequin, Sequin.Runtime.SlotProcessorServer,
   max_accumulated_bytes: ConfigParser.replication_flush_max_accumulated_bytes(env_vars),

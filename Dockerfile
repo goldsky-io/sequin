@@ -87,7 +87,8 @@ ENV RELEASE_VERSION=${RELEASE_VERSION}
 RUN mix compile
 
 # Ensure stacktraces we send to Sentry are complete
-RUN mix sentry.package_source_code
+# Set a dummy DSN for build time since Sentry config requires it
+RUN SENTRY_DSN="https://public@sentry.io/1" mix sentry.package_source_code || echo "Sentry packaging skipped"
 
 # Changes to config/runtime.exs don't require recompiling the code
 COPY config/runtime.exs config/
