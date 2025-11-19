@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "argon2": "^0.44.0",
+    "js-yaml": "^4.1.0"
+  }
+}
