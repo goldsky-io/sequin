@@ -562,10 +562,16 @@ defmodule Sequin.Runtime.SlotProducer do
   end
 
   defp update_restart_wal_cursor(%State{} = state) do
+    # If no messages have been dispatched, keepalives are driving cursor advancement directly.
+    # Skip querying message stores which would overwrite the keepalive-driven cursor.
     restart_wal_cursor =
-      case state.restart_wal_cursor_fn.(state.id, state.restart_wal_cursor) do
-        nil -> state.restart_wal_cursor
-        next_cursor -> next_cursor
+      if is_nil(state.last_dispatched_wal_cursor) do
+        state.restart_wal_cursor
+      else
+        case state.restart_wal_cursor_fn.(state.id, state.restart_wal_cursor) do
+          nil -> state.restart_wal_cursor
+          next_cursor -> next_cursor
+        end
       end
 
     if not is_nil(state.restart_wal_cursor) and
