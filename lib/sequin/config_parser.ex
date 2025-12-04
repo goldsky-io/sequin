@@ -369,4 +369,24 @@ defmodule Sequin.ConfigParser do
   def backfill_max_pending_messages(env) do
     parse_positive_int(env["BACKFILL_MAX_PENDING_MESSAGES"], "BACKFILL_MAX_PENDING_MESSAGES")
   end
+
+  @doc """
+  Returns the value of SLOT_PROCESSOR_MAX_HEARTBEAT_EMISSION_INTERVAL_MIN as a positive integer, or nil if not set/invalid.
+  """
+  def max_heartbeat_emission_interval_min(env) do
+    parse_positive_int(
+      env["SLOT_PROCESSOR_MAX_HEARTBEAT_EMISSION_INTERVAL_MIN"],
+      "SLOT_PROCESSOR_MAX_HEARTBEAT_EMISSION_INTERVAL_MIN"
+    )
+  end
+
+  @doc """
+  Returns the value of SLOT_PROCESSOR_MAX_HEARTBEAT_RECEIVE_TIMEOUT_MIN as a positive integer, or nil if not set/invalid.
+  """
+  def max_heartbeat_receive_timeout_min(env) do
+    parse_positive_int(
+      env["SLOT_PROCESSOR_MAX_HEARTBEAT_RECEIVE_TIMEOUT_MIN"],
+      "SLOT_PROCESSOR_MAX_HEARTBEAT_RECEIVE_TIMEOUT_MIN"
+    )
+  end
 end

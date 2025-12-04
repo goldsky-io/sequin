@@ -298,8 +298,6 @@ defmodule Sequin.Runtime.SlotProcessorServer do
     end
   end
 
-  @max_time_between_heartbeat_emissions_min 5
-  @max_time_between_heartbeat_emit_and_receive_min 10
   @decorate track_metrics("verify_heartbeat")
   def handle_info(:verify_heartbeat, %State{} = state) do
     next_state = schedule_heartbeat_verification(state)
@@ -318,8 +316,10 @@ defmodule Sequin.Runtime.SlotProcessorServer do
         {:noreply, next_state}
 
       {:error, :no_recent_heartbeat} ->
+        max_emission_interval_min = max_heartbeat_emission_interval_min()
+
         Logger.error(
-          "[SlotProcessorServer] Heartbeat verification failed (no heartbeat emitted in last #{@max_time_between_heartbeat_emissions_min} min)",
+          "[SlotProcessorServer] Heartbeat verification failed (no heartbeat emitted in last #{max_emission_interval_min} min)",
           heartbeat_id: state.current_heartbeat_id
         )
 
@@ -332,7 +332,7 @@ defmodule Sequin.Runtime.SlotProcessorServer do
               Error.service(
                 service: :replication,
                 message:
-                  "Replication slot connection is stale - no heartbeat emitted in last #{@max_time_between_heartbeat_emissions_min} min"
+                  "Replication slot connection is stale - no heartbeat emitted in last #{max_emission_interval_min} min"
               )
           }
         )
@@ -379,8 +379,10 @@ defmodule Sequin.Runtime.SlotProcessorServer do
         {:noreply, next_state}
 
       {:error, :stale_connection} ->
+        max_receive_timeout_min = max_heartbeat_receive_timeout_min()
+
         Logger.error(
-          "[SlotProcessorServer] Heartbeat verification failed (no messages or heartbeat received in last #{@max_time_between_heartbeat_emit_and_receive_min} min)",
+          "[SlotProcessorServer] Heartbeat verification failed (no messages or heartbeat received in last #{max_receive_timeout_min} min)",
           heartbeat_id: state.current_heartbeat_id
         )
 
@@ -393,7 +395,7 @@ defmodule Sequin.Runtime.SlotProcessorServer do
               Error.service(
                 service: :replication,
                 message:
-                  "Replication slot connection is stale - no messages or heartbeat received in last #{@max_time_between_heartbeat_emit_and_receive_min} min"
+                  "Replication slot connection is stale - no messages or heartbeat received in last #{max_receive_timeout_min} min"
               )
           }
         )
@@ -452,12 +454,15 @@ defmodule Sequin.Runtime.SlotProcessorServer do
   end
 
   defp verify_heartbeat(%State{} = state) do
+    max_emission_interval_min = max_heartbeat_emission_interval_min()
+    max_receive_timeout_min = max_heartbeat_receive_timeout_min()
+
     cond do
       # No outstanding heartbeat but we have emitted one in the last few minutes
       # This is the most likely clause we hit because we usually receive the heartbeat message
       # pretty quickly after emitting it
       is_nil(state.current_heartbeat_id) and not is_nil(state.heartbeat_emitted_at) and
-          Sequin.Time.after_min_ago?(state.heartbeat_emitted_at, @max_time_between_heartbeat_emissions_min) ->
+          Sequin.Time.after_min_ago?(state.heartbeat_emitted_at, max_emission_interval_min) ->
         {:ok, "Last heartbeat was received"}
 
       # We have no outstanding heartbeat and it has been too long since we emitted one !
@@ -480,7 +485,7 @@ defmodule Sequin.Runtime.SlotProcessorServer do
       # We have an outstanding heartbeat but it was emitted less than 20s ago (too recent to verify)
       # This should only occur when latency between Sequin and the Postgres is high
       not is_nil(state.current_heartbeat_id) and
-          Sequin.Time.after_min_ago?(state.heartbeat_emitted_at, @max_time_between_heartbeat_emit_and_receive_min) ->
+          Sequin.Time.after_min_ago?(state.heartbeat_emitted_at, max_receive_timeout_min) ->
         {:error, :too_soon}
 
       # We have an outstanding heartbeat but have not received the heartbeat or any other messages recently
@@ -819,5 +824,17 @@ defmodule Sequin.Runtime.SlotProcessorServer do
     Enum.each(metrics.timing, fn {name, %{percent: percent}} ->
       Prometheus.set_slot_processor_server_operation_percent(replication_id, slot_name, name, percent)
     end)
+  end
+
+  defp max_heartbeat_emission_interval_min do
+    :sequin
+    |> Application.get_env(__MODULE__, [])
+    |> Keyword.get(:max_heartbeat_emission_interval_min, 5)
+  end
+
+  defp max_heartbeat_receive_timeout_min do
+    :sequin
+    |> Application.get_env(__MODULE__, [])
+    |> Keyword.get(:max_heartbeat_receive_timeout_min, 10)
   end
 end
