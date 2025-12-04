@@ -149,6 +149,9 @@ defmodule Sequin.Runtime.SlotProducer do
       # Last batch marker for new subscribers
       field :last_batch_marker, BatchMarker.t() | nil
 
+      # WAL tracking when no publication messages are produced
+      field :last_keepalive_wal_end, nil | integer()
+
       # Buffers
       field :accumulated_messages, %{count: non_neg_integer(), bytes: non_neg_integer(), messages: [Message.t()]},
         default: %{count: 0, bytes: 0, messages: []}
@@ -305,7 +308,10 @@ defmodule Sequin.Runtime.SlotProducer do
     {:noreply, [], state}
   end
 
-  def handle_info(:flush_batch, %State{last_dispatched_wal_cursor: nil, last_commit_lsn: nil} = state) do
+  def handle_info(
+        :flush_batch,
+        %State{last_dispatched_wal_cursor: nil, last_commit_lsn: nil, last_keepalive_wal_end: nil} = state
+      ) do
     Logger.info("[SlotProducer] Skipping flush_batch, no messages dispatched and no commits yet.")
 
     {:noreply, [], %{state | batch_flush_timer: nil}}
@@ -313,15 +319,18 @@ defmodule Sequin.Runtime.SlotProducer do
 
   def handle_info(:flush_batch, %State{} = state) do
     # Use last_dispatched_wal_cursor if we have dispatched messages, otherwise fall back to
-    # last_commit_lsn/last_commit_idx. This handles the case where WAL is being processed
+    # last_commit_lsn/last_commit_idx or last_keepalive_wal_end. This handles the case where WAL is being processed
     # but no messages match the publication (e.g., changes to tables not in the publication).
     high_watermark_wal_cursor =
-      case state.last_dispatched_wal_cursor do
-        nil ->
+      cond do
+        state.last_dispatched_wal_cursor ->
+          state.last_dispatched_wal_cursor
+
+        state.last_commit_lsn ->
           %{commit_lsn: state.last_commit_lsn, commit_idx: state.last_commit_idx}
 
-        cursor ->
-          cursor
+        true ->
+          %{commit_lsn: state.last_keepalive_wal_end, commit_idx: 0}
       end
 
     batch_marker = %BatchMarker{
@@ -521,6 +530,11 @@ defmodule Sequin.Runtime.SlotProducer do
     else
       Logger.debug(log, log_meta)
     end
+
+    state =
+      state
+      |> Map.put(:last_keepalive_wal_end, wal_end)
+      |> maybe_schedule_flush()
 
     {:ok, state}
   end
