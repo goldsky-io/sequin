@@ -536,10 +536,11 @@ defmodule Sequin.Runtime.SlotProducer do
       Logger.debug(log, log_meta)
     end
 
-    # If we're only seeing keepalives (no publication messages), advance the restart cursor directly
-    # so we can move the slot forward while catching up.
+    # If no publication messages have been dispatched, advance the restart cursor directly
+    # from keepalives so we can move the slot forward while catching up through WAL that
+    # contains only non-publication table changes.
     state =
-      if is_nil(state.last_commit_lsn) and is_nil(state.last_dispatched_wal_cursor) and
+      if is_nil(state.last_dispatched_wal_cursor) and
            (is_nil(state.restart_wal_cursor) or state.restart_wal_cursor.commit_lsn < wal_end_lsn) do
         %{state | restart_wal_cursor: %{commit_lsn: wal_end_lsn, commit_idx: 0}}
       else
