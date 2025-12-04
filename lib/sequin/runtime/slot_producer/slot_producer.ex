@@ -525,6 +525,7 @@ defmodule Sequin.Runtime.SlotProducer do
   # Byte1           - 1 if reply requested immediately to avoid timeout, 0 otherwise
   # The server is not asking for a reply
   defp handle_data(?k, <<?k, wal_end::64, clock::64, reply_requested>>, %State{} = state) do
+    wal_end_lsn = Postgres.lsn_to_int(wal_end)
     diff_ms = Sequin.Time.microseconds_since_2000_to_ms_since_now(clock)
     log = "Received keepalive message for slot (reply_requested=#{reply_requested}) (clock_diff=#{diff_ms}ms)"
     log_meta = [clock: clock, wal_end: wal_end, diff_ms: diff_ms]
@@ -535,9 +536,19 @@ defmodule Sequin.Runtime.SlotProducer do
       Logger.debug(log, log_meta)
     end
 
+    # If we're only seeing keepalives (no publication messages), advance the restart cursor directly
+    # so we can move the slot forward while catching up.
+    state =
+      if is_nil(state.last_commit_lsn) and is_nil(state.last_dispatched_wal_cursor) and
+           (is_nil(state.restart_wal_cursor) or state.restart_wal_cursor.commit_lsn < wal_end_lsn) do
+        %{state | restart_wal_cursor: %{commit_lsn: wal_end_lsn, commit_idx: 0}}
+      else
+        state
+      end
+
     state =
       state
-      |> Map.put(:last_keepalive_wal_end, wal_end)
+      |> Map.put(:last_keepalive_wal_end, wal_end_lsn)
       |> maybe_schedule_flush()
 
     {:ok, state}
