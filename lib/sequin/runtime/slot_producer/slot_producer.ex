@@ -536,11 +536,11 @@ defmodule Sequin.Runtime.SlotProducer do
       Logger.debug(log, log_meta)
     end
 
-    # If no publication messages have been dispatched, advance the restart cursor directly
-    # from keepalives so we can move the slot forward while catching up through WAL that
-    # contains only non-publication table changes.
+    # If no publication messages have been dispatched or accumulated, advance the restart
+    # cursor directly from keepalives so we can move the slot forward while catching up
+    # through WAL that contains only non-publication table changes.
     state =
-      if is_nil(state.last_dispatched_wal_cursor) and
+      if is_nil(state.last_dispatched_wal_cursor) and state.accumulated_messages.count == 0 and
            (is_nil(state.restart_wal_cursor) or state.restart_wal_cursor.commit_lsn < wal_end_lsn) do
         %{state | restart_wal_cursor: %{commit_lsn: wal_end_lsn, commit_idx: 0}}
       else
@@ -562,10 +562,15 @@ defmodule Sequin.Runtime.SlotProducer do
   end
 
   defp update_restart_wal_cursor(%State{} = state) do
-    # If no messages have been dispatched, keepalives are driving cursor advancement directly.
-    # Skip querying message stores which would overwrite the keepalive-driven cursor.
+    # If no messages have been dispatched AND none are accumulated, keepalives are driving
+    # cursor advancement directly. Skip querying message stores which would overwrite the
+    # keepalive-driven cursor. But if messages are queued, we must use message store flow
+    # to avoid advancing past unprocessed messages.
+    use_keepalive_cursor? =
+      is_nil(state.last_dispatched_wal_cursor) and state.accumulated_messages.count == 0
+
     restart_wal_cursor =
-      if is_nil(state.last_dispatched_wal_cursor) do
+      if use_keepalive_cursor? do
         state.restart_wal_cursor
       else
         case state.restart_wal_cursor_fn.(state.id, state.restart_wal_cursor) do
