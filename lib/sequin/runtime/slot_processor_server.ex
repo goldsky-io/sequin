@@ -21,6 +21,7 @@ defmodule Sequin.Runtime.SlotProcessorServer do
   alias Sequin.Error.InvariantError
   alias Sequin.Health
   alias Sequin.Health.Event
+  alias Sequin.Metrics
   alias Sequin.Postgres
   alias Sequin.ProcessMetrics
   alias Sequin.Prometheus
@@ -379,26 +380,60 @@ defmodule Sequin.Runtime.SlotProcessorServer do
         {:noreply, next_state}
 
       {:error, :stale_connection} ->
-        Logger.error(
-          "[SlotProcessorServer] Heartbeat verification failed (no messages or heartbeat received in last #{@max_time_between_heartbeat_emit_and_receive_min} min)",
-          heartbeat_id: state.current_heartbeat_id
-        )
+        # Check if we have high replication lag - if so, the slot is likely catching up
+        # and we shouldn't crash. The lag is measured every minute by CheckPostgresReplicationSlotWorker.
+        lag_result = Metrics.get_postgres_replication_slot_lag(state.replication_slot)
+        # 1GB threshold - if lag is higher, we're in catchup mode
+        high_lag_threshold = 1_000_000_000
 
-        Health.put_event(
-          state.replication_slot,
-          %Event{
-            slug: :replication_heartbeat_verification,
-            status: :fail,
-            error:
-              Error.service(
-                service: :replication,
-                message:
-                  "Replication slot connection is stale - no messages or heartbeat received in last #{@max_time_between_heartbeat_emit_and_receive_min} min"
-              )
-          }
-        )
+        case lag_result do
+          {:ok, lag_bytes} when is_number(lag_bytes) and lag_bytes > high_lag_threshold ->
+            lag_mb = Float.round(lag_bytes / 1024 / 1024, 0)
 
-        {:stop, :heartbeat_verification_failed, next_state}
+            Logger.warning(
+              "[SlotProcessorServer] Heartbeat verification skipped - high replication lag (#{lag_mb}MB). Slot is likely catching up.",
+              heartbeat_id: state.current_heartbeat_id,
+              lag_bytes: lag_bytes
+            )
+
+            Health.put_event(
+              state.replication_slot,
+              %Event{
+                slug: :replication_heartbeat_verification,
+                status: :warning,
+                error:
+                  Error.service(
+                    service: :replication,
+                    message:
+                      "Heartbeat verification skipped due to high replication lag (#{lag_mb}MB). Slot is catching up."
+                  )
+              }
+            )
+
+            {:noreply, next_state}
+
+          _ ->
+            Logger.error(
+              "[SlotProcessorServer] Heartbeat verification failed (no messages or heartbeat received in last #{@max_time_between_heartbeat_emit_and_receive_min} min)",
+              heartbeat_id: state.current_heartbeat_id
+            )
+
+            Health.put_event(
+              state.replication_slot,
+              %Event{
+                slug: :replication_heartbeat_verification,
+                status: :fail,
+                error:
+                  Error.service(
+                    service: :replication,
+                    message:
+                      "Replication slot connection is stale - no messages or heartbeat received in last #{@max_time_between_heartbeat_emit_and_receive_min} min"
+                  )
+              }
+            )
+
+            {:stop, :heartbeat_verification_failed, next_state}
+        end
 
       {:error, :too_soon} ->
         Logger.info("[SlotProcessorServer] Heartbeat verification indeterminate (outstanding heartbeat recently emitted)",

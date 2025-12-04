@@ -305,15 +305,27 @@ defmodule Sequin.Runtime.SlotProducer do
     {:noreply, [], state}
   end
 
-  def handle_info(:flush_batch, %State{last_dispatched_wal_cursor: nil} = state) do
-    Logger.info("[SlotProducer] Skipping flush_batch, no messages dispatched yet.")
+  def handle_info(:flush_batch, %State{last_dispatched_wal_cursor: nil, last_commit_lsn: nil} = state) do
+    Logger.info("[SlotProducer] Skipping flush_batch, no messages dispatched and no commits yet.")
 
     {:noreply, [], %{state | batch_flush_timer: nil}}
   end
 
   def handle_info(:flush_batch, %State{} = state) do
+    # Use last_dispatched_wal_cursor if we have dispatched messages, otherwise fall back to
+    # last_commit_lsn/last_commit_idx. This handles the case where WAL is being processed
+    # but no messages match the publication (e.g., changes to tables not in the publication).
+    high_watermark_wal_cursor =
+      case state.last_dispatched_wal_cursor do
+        nil ->
+          %{commit_lsn: state.last_commit_lsn, commit_idx: state.last_commit_idx}
+
+        cursor ->
+          cursor
+      end
+
     batch_marker = %BatchMarker{
-      high_watermark_wal_cursor: state.last_dispatched_wal_cursor,
+      high_watermark_wal_cursor: high_watermark_wal_cursor,
       idx: state.batch_idx
     }
 
@@ -416,6 +428,10 @@ defmodule Sequin.Runtime.SlotProducer do
         next_commit_idx: 0,
         transaction_annotations: nil
     }
+
+    # Schedule a batch flush even if no messages matched the publication.
+    # This ensures we can advance the slot through WAL that doesn't produce messages.
+    state = maybe_schedule_flush(state)
 
     {:ok, state}
   end
