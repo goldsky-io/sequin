@@ -333,6 +333,10 @@ defmodule Sequin.Runtime.SlotProducer do
           %{commit_lsn: state.last_keepalive_wal_end, commit_idx: 0}
       end
 
+    Logger.info(
+      "[SlotProducer] Flushing batch #{state.batch_idx} with high_watermark #{inspect(high_watermark_wal_cursor)}, consumers=#{length(state.consumers)}"
+    )
+
     batch_marker = %BatchMarker{
       high_watermark_wal_cursor: high_watermark_wal_cursor,
       idx: state.batch_idx
