@@ -78,10 +78,30 @@ defmodule Sequin.Runtime.SlotSupervisor do
     # Then start the slot processor
     case Sequin.DynamicSupervisor.maybe_start_child(sup, slot_processor_spec) do
       {:ok, slot_processor_sup_pid} ->
+        Logger.info("[SlotSupervisor] Starting monitor registration for consumers",
+          replication_slot_id: pg_replication.id,
+          database_id: pg_replication.postgres_database_id,
+          consumer_count: length(pg_replication.not_disabled_sink_consumers),
+          consumer_ids: Enum.map(pg_replication.not_disabled_sink_consumers, & &1.id)
+        )
+
         # Register all active message stores after processor is started
         Enum.each(
           pg_replication.not_disabled_sink_consumers,
-          &SlotProcessorServer.monitor_message_store(pg_replication.id, &1)
+          fn consumer ->
+            Logger.info("[SlotSupervisor] Calling monitor_message_store",
+              consumer_id: consumer.id,
+              replication_slot_id: pg_replication.id
+            )
+
+            SlotProcessorServer.monitor_message_store(pg_replication.id, consumer)
+          end
+        )
+
+        Logger.info("[SlotSupervisor] All monitors registered",
+          replication_slot_id: pg_replication.id,
+          database_id: pg_replication.postgres_database_id,
+          consumer_count: length(pg_replication.not_disabled_sink_consumers)
         )
 
         {:ok, slot_processor_sup_pid}

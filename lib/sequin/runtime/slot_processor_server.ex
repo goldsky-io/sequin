@@ -169,7 +169,12 @@ defmodule Sequin.Runtime.SlotProcessorServer do
 
     ProcessMetrics.metadata(%{replication_id: state.id, slot_name: state.slot_name})
 
-    Logger.info("[SlotProcessorServer] Initialized")
+    Logger.info("[SlotProcessorServer] Initialized",
+      message_handler_consumer_count: length(state.message_handler_ctx.consumers),
+      message_handler_consumer_ids: Enum.map(state.message_handler_ctx.consumers, & &1.id),
+      monitored_count: map_size(state.message_store_refs),
+      monitored_ids: Map.keys(state.message_store_refs)
+    )
 
     if state.test_pid do
       Mox.allow(Sequin.Runtime.MessageHandlerMock, state.test_pid, self())
@@ -189,6 +194,12 @@ defmodule Sequin.Runtime.SlotProcessorServer do
   @impl GenServer
   @decorate track_metrics("update_message_handler_ctx")
   def handle_call({:update_message_handler_ctx, ctx}, _from, %State{} = state) do
+    Logger.info("[SlotProcessorServer] Updating message_handler_ctx",
+      old_consumer_ids: Enum.map(state.message_handler_ctx.consumers, & &1.id),
+      new_consumer_ids: Enum.map(ctx.consumers, & &1.id),
+      monitored_ids: Map.keys(state.message_store_refs)
+    )
+
     state = %{state | message_handler_ctx: ctx}
     {:reply, :ok, state}
   end
@@ -203,8 +214,14 @@ defmodule Sequin.Runtime.SlotProcessorServer do
       pid = GenServer.whereis(SlotMessageStore.via_tuple(consumer.id, 0))
       ref = Process.monitor(pid)
       :ok = SlotMessageStore.set_monitor_ref(consumer, ref)
-      Logger.info("Monitoring message store for consumer #{consumer.id}")
-      {:reply, :ok, %{state | message_store_refs: Map.put(state.message_store_refs, consumer.id, ref)}}
+      new_refs = Map.put(state.message_store_refs, consumer.id, ref)
+
+      Logger.info("Monitoring message store for consumer #{consumer.id}",
+        total_monitored_count: map_size(new_refs),
+        all_monitored_ids: Map.keys(new_refs)
+      )
+
+      {:reply, :ok, %{state | message_store_refs: new_refs}}
     end
   end
 
@@ -697,6 +714,13 @@ defmodule Sequin.Runtime.SlotProcessorServer do
   end
 
   defp restart_wal_cursor!(%State{} = state) do
+    Logger.info("[SlotProcessorServer] restart_wal_cursor called",
+      monitored_count: map_size(state.message_store_refs),
+      monitored_ids: Map.keys(state.message_store_refs),
+      message_handler_consumer_count: length(state.message_handler_ctx.consumers),
+      message_handler_consumer_ids: Enum.map(state.message_handler_ctx.consumers, & &1.id)
+    )
+
     consumers =
       Repo.preload(state.replication_slot, :not_disabled_sink_consumers, force: true).not_disabled_sink_consumers
 
@@ -764,6 +788,15 @@ defmodule Sequin.Runtime.SlotProcessorServer do
 
     %MessageHandler.Context{consumers: message_handler_consumers} = state.message_handler_ctx
     message_handler_sink_consumer_ids = Enum.map(message_handler_consumers, & &1.id)
+
+    Logger.info("[SlotProcessorServer] verify_monitor_refs check",
+      db_consumer_ids: sink_consumer_ids,
+      db_consumer_count: length(sink_consumer_ids),
+      monitored_ids: monitored_sink_consumer_ids,
+      monitored_count: length(monitored_sink_consumer_ids),
+      message_handler_ids: message_handler_sink_consumer_ids,
+      message_handler_count: length(message_handler_sink_consumer_ids)
+    )
 
     cond do
       not Enum.all?(sink_consumer_ids, &(&1 in message_handler_sink_consumer_ids)) ->

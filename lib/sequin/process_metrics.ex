@@ -397,14 +397,11 @@ defmodule Sequin.ProcessMetrics do
     end
 
     case metrics do
-      %{busy_percent: nil} ->
-        Logger.info("#{logger_prefix} Process metrics", logger_metadata(metrics))
-
-      %{busy_percent: busy_percent} when busy_percent < 20 ->
-        Logger.info("#{logger_prefix} Process metrics (#{busy_percent}% busy)", logger_metadata(metrics))
-
-      %{busy_percent: busy_percent} ->
+      %{busy_percent: busy_percent} when is_number(busy_percent) and busy_percent >= 20 ->
         Logger.warning("#{logger_prefix} Process metrics (#{busy_percent}% busy)", logger_metadata(metrics))
+
+      _ ->
+        :ok
     end
 
     # Clear metrics after logging
