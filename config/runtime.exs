@@ -86,8 +86,8 @@ config :sequin, Sequin.Runtime.SlotProcessorServer,
   max_accumulated_bytes: ConfigParser.replication_flush_max_accumulated_bytes(env_vars),
   max_accumulated_messages: ConfigParser.replication_flush_max_accumulated_messages(env_vars),
   max_accumulated_messages_time_ms: ConfigParser.replication_flush_max_accumulated_time_ms(env_vars),
-  max_heartbeat_emission_interval_min: ConfigParser.max_heartbeat_emission_interval_min(env_vars),
-  max_heartbeat_receive_timeout_min: ConfigParser.max_heartbeat_receive_timeout_min(env_vars)
+  max_heartbeat_emission_interval_min: ConfigParser.max_heartbeat_emission_interval_min(env_vars) || 5,
+  max_heartbeat_receive_timeout_min: ConfigParser.max_heartbeat_receive_timeout_min(env_vars) || 10
 
 # ## Using releases
 #

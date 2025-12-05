@@ -862,12 +862,12 @@ defmodule Sequin.Runtime.SlotProcessorServer do
   defp max_heartbeat_emission_interval_min do
     :sequin
     |> Application.get_env(__MODULE__, [])
-    |> Keyword.get(:max_heartbeat_emission_interval_min, 5)
+    |> Keyword.fetch!(:max_heartbeat_emission_interval_min)
   end
 
   defp max_heartbeat_receive_timeout_min do
     :sequin
     |> Application.get_env(__MODULE__, [])
-    |> Keyword.get(:max_heartbeat_receive_timeout_min, 10)
+    |> Keyword.fetch!(:max_heartbeat_receive_timeout_min)
   end
 end
