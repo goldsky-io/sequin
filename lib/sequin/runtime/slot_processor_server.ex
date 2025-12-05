@@ -769,6 +769,15 @@ defmodule Sequin.Runtime.SlotProcessorServer do
             low_for_message_stores
           end
 
+        {:error, %InvariantError{code: :monitors_not_registered} = error} ->
+          # During startup, monitors may not be registered yet. Return nil to safely
+          # skip advancing the WAL cursor until monitors are ready.
+          Logger.warning("[SlotProcessorServer] Monitor refs check failed, returning nil cursor",
+            error: Exception.message(error)
+          )
+
+          nil
+
         {:error, error} ->
           raise error
       end
@@ -808,7 +817,7 @@ defmodule Sequin.Runtime.SlotProcessorServer do
 
         Logger.error(msg)
 
-        {:error, Error.invariant(message: msg)}
+        {:error, Error.invariant(message: msg, code: :message_handler_mismatch)}
 
       not Enum.all?(sink_consumer_ids, &(&1 in monitored_sink_consumer_ids)) ->
         msg = """
@@ -819,7 +828,7 @@ defmodule Sequin.Runtime.SlotProcessorServer do
 
         Logger.error(msg)
 
-        {:error, Error.invariant(message: msg)}
+        {:error, Error.invariant(message: msg, code: :monitors_not_registered)}
 
       true ->
         :ok
