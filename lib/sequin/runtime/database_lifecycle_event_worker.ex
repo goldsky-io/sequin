@@ -62,7 +62,7 @@ defmodule Sequin.Runtime.DatabaseLifecycleEventWorker do
 
   defp handle_postgres_replication_slot_event(event, id) do
     Logger.info("[LifecycleEventWorker] Handling event `#{event}` for postgres_replication_slot",
-      replication_id: id
+      replication_slot_id: id
     )
 
     case event do

@@ -129,7 +129,7 @@ defmodule Sequin.Runtime.SlotSupervisor do
         Logger.error("[SlotSupervisor] Failed to start child",
           error: error,
           consumer_id: sink_consumer.id,
-          replication_id: sink_consumer.replication_slot_id
+          replication_slot_id: sink_consumer.replication_slot_id
         )
 
         raise error
@@ -143,7 +143,7 @@ defmodule Sequin.Runtime.SlotSupervisor do
   def stop_stores_and_pipeline(replication_slot_id, id) do
     Logger.info("[SlotSupervisor] Stopping message store and pipeline #{id} in slot #{replication_slot_id}",
       consumer_id: id,
-      replication_id: replication_slot_id
+      replication_slot_id: replication_slot_id
     )
 
     sup_via = via_tuple(replication_slot_id)

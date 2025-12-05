@@ -181,7 +181,7 @@ defmodule Sequin.Runtime.SlotProducer do
 
     Logger.metadata(
       account_id: account_id,
-      replication_id: id,
+      replication_slot_id: id,
       database_id: database_id
     )
 

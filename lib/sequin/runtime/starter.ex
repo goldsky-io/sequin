@@ -56,7 +56,7 @@ defmodule Sequin.Runtime.Starter do
     :exit, error ->
       Logger.error("[RuntimeStarter] Failed to start replication",
         error: error,
-        replication_id: pg_replication.id
+        replication_slot_id: pg_replication.id
       )
   end
 

@@ -1032,7 +1032,7 @@ defmodule Sequin.Health do
           [database_id: entity.id]
 
         %PostgresReplicationSlot{} ->
-          [database_id: entity.postgres_database_id, replication_id: entity.id]
+          [database_id: entity.postgres_database_id, replication_slot_id: entity.id]
 
         %SinkConsumer{} ->
           [consumer_id: entity.id]
