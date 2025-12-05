@@ -167,7 +167,7 @@ defmodule Sequin.Runtime.SlotProcessorServer do
 
     Sequin.name_process({__MODULE__, state.id})
 
-    ProcessMetrics.metadata(%{replication_id: state.id, slot_name: state.slot_name})
+    ProcessMetrics.metadata(%{replication_slot_id: state.id, slot_name: state.slot_name})
 
     Logger.info("[SlotProcessorServer] Initialized",
       message_handler_consumer_count: length(state.message_handler_ctx.consumers),
@@ -848,14 +848,14 @@ defmodule Sequin.Runtime.SlotProcessorServer do
   def process_metrics_on_log(%ProcessMetrics.Metrics{busy_percent: nil}), do: :ok
 
   def process_metrics_on_log(%ProcessMetrics.Metrics{} = metrics) do
-    %{replication_id: replication_id, slot_name: slot_name} = metrics.metadata
+    %{replication_slot_id: replication_slot_id, slot_name: slot_name} = metrics.metadata
 
     # Busy percent
-    Prometheus.set_slot_processor_server_busy_percent(replication_id, slot_name, metrics.busy_percent)
+    Prometheus.set_slot_processor_server_busy_percent(replication_slot_id, slot_name, metrics.busy_percent)
 
     # Operation percent
     Enum.each(metrics.timing, fn {name, %{percent: percent}} ->
-      Prometheus.set_slot_processor_server_operation_percent(replication_id, slot_name, name, percent)
+      Prometheus.set_slot_processor_server_operation_percent(replication_slot_id, slot_name, name, percent)
     end)
   end
 

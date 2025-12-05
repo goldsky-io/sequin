@@ -52,25 +52,25 @@ defmodule Sequin.Prometheus do
     # Process metrics
     Gauge.new(
       name: :sequin_slot_processor_server_busy_percent,
-      labels: [:replication_id, :slot_name],
+      labels: [:replication_slot_id, :slot_name],
       help: "The busy percent of the slot processor server."
     )
 
     Gauge.new(
       name: :sequin_slot_processor_server_operation_percent,
-      labels: [:replication_id, :slot_name, :operation],
+      labels: [:replication_slot_id, :slot_name, :operation],
       help: "The percent of time spent on each operation in the slot processor server."
     )
 
     Gauge.new(
       name: :sequin_slot_message_handler_busy_percent,
-      labels: [:replication_id, :slot_name, :processor_idx],
+      labels: [:replication_slot_id, :slot_name, :processor_idx],
       help: "The busy percent of the slot message handler."
     )
 
     Gauge.new(
       name: :sequin_slot_message_handler_operation_percent,
-      labels: [:replication_id, :slot_name, :processor_idx, :operation],
+      labels: [:replication_slot_id, :slot_name, :processor_idx, :operation],
       help: "The percent of time spent on each operation in the slot message handler."
     )
 
@@ -368,51 +368,51 @@ defmodule Sequin.Prometheus do
     Gauge.set([name: :sequin_messages_buffered, labels: [consumer_id, consumer_name]], count)
   end
 
-  @spec set_slot_processor_server_busy_percent(replication_id :: String.t(), slot_name :: String.t(), percent :: number()) ::
+  @spec set_slot_processor_server_busy_percent(replication_slot_id :: String.t(), slot_name :: String.t(), percent :: number()) ::
           :ok
-  def set_slot_processor_server_busy_percent(replication_id, slot_name, percent) do
-    Gauge.set([name: :sequin_slot_processor_server_busy_percent, labels: [replication_id, slot_name]], percent)
+  def set_slot_processor_server_busy_percent(replication_slot_id, slot_name, percent) do
+    Gauge.set([name: :sequin_slot_processor_server_busy_percent, labels: [replication_slot_id, slot_name]], percent)
   end
 
   @spec set_slot_processor_server_operation_percent(
-          replication_id :: String.t(),
+          replication_slot_id :: String.t(),
           slot_name :: String.t(),
           operation :: String.t(),
           percent :: number()
         ) :: :ok
-  def set_slot_processor_server_operation_percent(replication_id, slot_name, operation, percent) do
+  def set_slot_processor_server_operation_percent(replication_slot_id, slot_name, operation, percent) do
     Gauge.set(
-      [name: :sequin_slot_processor_server_operation_percent, labels: [replication_id, slot_name, operation]],
+      [name: :sequin_slot_processor_server_operation_percent, labels: [replication_slot_id, slot_name, operation]],
       percent
     )
   end
 
   @spec set_slot_message_handler_busy_percent(
-          replication_id :: String.t(),
+          replication_slot_id :: String.t(),
           slot_name :: String.t(),
           processor_idx :: number(),
           percent :: number()
         ) ::
           :ok
-  def set_slot_message_handler_busy_percent(replication_id, slot_name, processor_idx, percent) do
+  def set_slot_message_handler_busy_percent(replication_slot_id, slot_name, processor_idx, percent) do
     Gauge.set(
-      [name: :sequin_slot_message_handler_busy_percent, labels: [replication_id, slot_name, processor_idx]],
+      [name: :sequin_slot_message_handler_busy_percent, labels: [replication_slot_id, slot_name, processor_idx]],
       percent
     )
   end
 
   @spec set_slot_message_handler_operation_percent(
-          replication_id :: String.t(),
+          replication_slot_id :: String.t(),
           slot_name :: String.t(),
           processor_idx :: number(),
           operation :: String.t(),
           percent :: number()
         ) :: :ok
-  def set_slot_message_handler_operation_percent(replication_id, slot_name, processor_idx, operation, percent) do
+  def set_slot_message_handler_operation_percent(replication_slot_id, slot_name, processor_idx, operation, percent) do
     Gauge.set(
       [
         name: :sequin_slot_message_handler_operation_percent,
-        labels: [replication_id, slot_name, processor_idx, operation]
+        labels: [replication_slot_id, slot_name, processor_idx, operation]
       ],
       percent
     )
