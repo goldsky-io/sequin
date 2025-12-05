@@ -32,7 +32,7 @@ defmodule Sequin.Health.CheckPostgresReplicationSlotWorker do
   def perform(%Oban.Job{args: %{"postgres_database_id" => postgres_database_id}}) do
     with {:ok, database} <- Databases.get_db(postgres_database_id),
          database = Repo.preload(database, [:replication_slot]),
-         Logger.metadata(database_id: database.id, replication_id: database.replication_slot.id),
+         Logger.metadata(database_id: database.id, replication_slot_id: database.replication_slot.id),
          :ok <- check_database(database) do
       check_replication_slot(database)
       measure_replication_lag(database)

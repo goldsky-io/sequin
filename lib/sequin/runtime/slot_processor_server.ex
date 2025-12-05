@@ -161,7 +161,7 @@ defmodule Sequin.Runtime.SlotProcessorServer do
   def init(%State{} = state) do
     Logger.metadata(
       account_id: state.postgres_database.account_id,
-      replication_id: state.id,
+      replication_slot_id: state.id,
       database_id: state.postgres_database.id
     )
 

@@ -128,7 +128,7 @@ defmodule Sequin.Runtime.SlotMessageStore do
 
     state = %{state | consumer: consumer}
 
-    Logger.metadata(account_id: consumer.account_id, replication_id: consumer.replication_slot_id)
+    Logger.metadata(account_id: consumer.account_id, replication_slot_id: consumer.replication_slot_id)
 
     :ok = State.setup_ets(state)
 

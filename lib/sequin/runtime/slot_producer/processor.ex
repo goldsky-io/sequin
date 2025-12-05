@@ -95,7 +95,7 @@ defmodule Sequin.Runtime.SlotProducer.Processor do
     account_id = Keyword.fetch!(opts, :account_id)
     partition_idx = Keyword.fetch!(opts, :partition_idx)
 
-    Logger.metadata(replication_id: id, account_id: account_id)
+    Logger.metadata(replication_slot_id: id, account_id: account_id)
 
     Sequin.name_process({__MODULE__, {id, partition_idx}})
 

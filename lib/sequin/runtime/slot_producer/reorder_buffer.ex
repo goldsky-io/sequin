@@ -64,7 +64,7 @@ defmodule Sequin.Runtime.SlotProducer.ReorderBuffer do
     id = Keyword.fetch!(opts, :id)
     account_id = Keyword.fetch!(opts, :account_id)
 
-    Logger.metadata(replication_id: id, account_id: account_id)
+    Logger.metadata(replication_slot_id: id, account_id: account_id)
 
     Sequin.name_process({__MODULE__, id})
 
