@@ -43,6 +43,7 @@ defmodule Sequin.Aws.Client do
 
   Returns `{:error, reason}` if credentials cannot be obtained.
   """
+  @impl Sequin.Aws
   def get_credentials do
     case Application.ensure_all_started(:aws_credentials) do
       {:ok, _} ->

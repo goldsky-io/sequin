@@ -7,6 +7,22 @@ defmodule Sequin.Aws do
   """
 
   @callback get_client(String.t()) :: {:ok, AWS.Client.t()} | {:error, Sequin.Error.t()}
+  @callback get_credentials() :: {:ok, map()} | {:error, Sequin.Error.t()}
+
+  @doc """
+  Fetches AWS credentials from the ECS task role or other configured sources.
+
+  Returns `{:ok, credentials}` where credentials is a map containing:
+  - `:access_key_id`
+  - `:secret_access_key`
+  - `:token` (optional, for temporary credentials)
+
+  Returns `{:error, reason}` if credentials cannot be obtained.
+  """
+  @spec get_credentials() :: {:ok, map()} | {:error, Sequin.Error.t()}
+  def get_credentials do
+    impl().get_credentials()
+  end
 
   @doc """
   Gets an AWS client configured with task role credentials.

@@ -433,7 +433,7 @@ defmodule Sequin.Runtime.HttpPushSqsPipeline do
       ]
     else
       # Fetch credentials from ECS task role
-      case Sequin.Aws.Client.get_credentials() do
+      case Sequin.Aws.get_credentials() do
         {:ok, credentials} ->
           config = [
             access_key_id: Map.fetch!(credentials, :access_key_id),
