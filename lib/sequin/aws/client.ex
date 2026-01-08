@@ -33,7 +33,17 @@ defmodule Sequin.Aws.Client do
     end
   end
 
-  defp get_credentials do
+  @doc """
+  Fetches AWS credentials from the ECS task role or other configured sources.
+
+  Returns `{:ok, credentials}` where credentials is a map containing:
+  - `:access_key_id`
+  - `:secret_access_key`
+  - `:token` (optional, for temporary credentials)
+
+  Returns `{:error, reason}` if credentials cannot be obtained.
+  """
+  def get_credentials do
     case Application.ensure_all_started(:aws_credentials) do
       {:ok, _} ->
         case :aws_credentials.get_credentials() do
