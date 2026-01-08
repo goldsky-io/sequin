@@ -765,7 +765,7 @@
             "uid": "sqpds"
           },
           "editorMode": "code",
-          "expr": "sum(sequin_slot_processor_server_operation_percent) by (replication_id, slot_name, operation)",
+          "expr": "sum(sequin_slot_processor_server_operation_percent) by (replication_slot_id, slot_name, operation)",
           "instant": false,
           "legendFormat": "{{slot_name}} - {{operation}}",
           "range": true,
