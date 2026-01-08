@@ -442,9 +442,10 @@ defmodule Sequin.Runtime.HttpPushSqsPipeline do
           ]
 
           # Add session token if present (for temporary credentials)
+          # ExAws expects :security_token, not :token
           case Map.get(credentials, :token) do
             nil -> config
-            token -> Keyword.put(config, :token, token)
+            token -> Keyword.put(config, :security_token, token)
           end
 
         {:error, reason} ->
