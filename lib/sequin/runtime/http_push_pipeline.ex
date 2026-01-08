@@ -71,12 +71,23 @@ defmodule Sequin.Runtime.HttpPushPipeline do
   end
 
   # Helper function to create AWS SQS client
+  # Uses explicit credentials if provided, otherwise fetches from ECS task role
   defp create_aws_client(config) do
-    %{access_key_id: access_key_id, secret_access_key: secret_access_key, region: region} = config
+    %{region: region} = config
+    access_key_id = Map.get(config, :access_key_id)
+    secret_access_key = Map.get(config, :secret_access_key)
 
-    access_key_id
-    |> AWS.Client.create(secret_access_key, region)
-    |> HttpClient.put_client()
+    client =
+      if access_key_id && secret_access_key do
+        AWS.Client.create(access_key_id, secret_access_key, region)
+      else
+        case Sequin.Aws.Client.get_client(region) do
+          {:ok, client} -> client
+          {:error, reason} -> raise "Failed to get AWS client: #{inspect(reason)}"
+        end
+      end
+
+    HttpClient.put_client(client)
   end
 
   @impl SinkPipeline
