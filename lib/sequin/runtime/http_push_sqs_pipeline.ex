@@ -110,12 +110,11 @@ defmodule Sequin.Runtime.HttpPushSqsPipeline do
     queue_kind = Keyword.fetch!(opts, :queue_kind)
     name = Keyword.fetch!(opts, :name)
 
-    {:ok,
-     %{
-       region: region,
-       access_key_id: access_key_id,
-       secret_access_key: secret_access_key
-     }} = fetch_sqs_config()
+    {:ok, sqs_config} = fetch_sqs_config()
+    region = Map.fetch!(sqs_config, :region)
+
+    # Use explicit credentials if provided, otherwise fetch from ECS task role
+    aws_config = resolve_aws_credentials(sqs_config, region)
 
     producer_mod = Keyword.get(opts, :producer_mod, BroadwaySQS.Producer)
 
@@ -125,11 +124,7 @@ defmodule Sequin.Runtime.HttpPushSqsPipeline do
         module: {
           producer_mod,
           queue_url: queue_url,
-          config: [
-            access_key_id: access_key_id,
-            secret_access_key: secret_access_key,
-            region: region
-          ],
+          config: aws_config,
           attribute_names: [:sent_timestamp, :approximate_receive_count, :approximate_first_receive_timestamp],
           receive_interval: 1_000,
           max_number_of_messages: 10,
@@ -422,5 +417,39 @@ defmodule Sequin.Runtime.HttpPushSqsPipeline do
 
   defp default_req_opts do
     Application.get_env(:sequin, __MODULE__)[:req_opts] || []
+  end
+
+  # Resolves AWS credentials from explicit config or ECS task role
+  defp resolve_aws_credentials(sqs_config, region) do
+    access_key_id = Map.get(sqs_config, :access_key_id)
+    secret_access_key = Map.get(sqs_config, :secret_access_key)
+
+    if access_key_id && secret_access_key do
+      # Use explicit credentials from config
+      [
+        access_key_id: access_key_id,
+        secret_access_key: secret_access_key,
+        region: region
+      ]
+    else
+      # Fetch credentials from ECS task role
+      case Sequin.Aws.Client.get_credentials() do
+        {:ok, credentials} ->
+          config = [
+            access_key_id: Map.fetch!(credentials, :access_key_id),
+            secret_access_key: Map.fetch!(credentials, :secret_access_key),
+            region: region
+          ]
+
+          # Add session token if present (for temporary credentials)
+          case Map.get(credentials, :token) do
+            nil -> config
+            token -> Keyword.put(config, :token, token)
+          end
+
+        {:error, reason} ->
+          raise "Failed to get AWS credentials: #{inspect(reason)}"
+      end
+    end
   end
 end
