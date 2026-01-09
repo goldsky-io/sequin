@@ -14,6 +14,12 @@ defmodule Sequin.Runtime.SlotSupervisor do
 
   require Logger
 
+  def config do
+    Application.get_env(:sequin, __MODULE__, [])
+  end
+
+  def setting_start_children_concurrency, do: Keyword.get(config(), :start_children_concurrency, 10)
+
   def via_tuple(id) do
     {:via, :syn, {:replication, {__MODULE__, id}}}
   end
@@ -67,7 +73,7 @@ defmodule Sequin.Runtime.SlotSupervisor do
         if test_pid = opts[:test_pid], do: Sandbox.allow(Sequin.Repo, test_pid, self())
         start_stores_and_pipeline!(consumer, opts)
       end,
-      max_concurrency: 10,
+      max_concurrency: setting_start_children_concurrency(),
       timeout: to_timeout(second: 20)
     )
     |> Enum.each(fn
