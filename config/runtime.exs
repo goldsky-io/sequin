@@ -89,6 +89,9 @@ config :sequin, Sequin.Runtime.SlotProcessorServer,
   max_heartbeat_emission_interval_min: ConfigParser.max_heartbeat_emission_interval_min(env_vars) || 5,
   max_heartbeat_receive_timeout_min: ConfigParser.max_heartbeat_receive_timeout_min(env_vars) || 10
 
+config :sequin, Sequin.Runtime.SlotSupervisor,
+  start_children_concurrency: String.to_integer(System.get_env("SLOT_START_CHILDREN_CONCURRENCY", "10"))
+
 # ## Using releases
 #
 # If you use `mix release`, you need to explicitly enable the server
