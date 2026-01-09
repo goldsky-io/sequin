@@ -33,17 +33,27 @@ defmodule Sequin.Runtime.HttpPushPipeline do
       |> Map.put(:req_opts, req_opts)
       |> Map.put(:features, features)
 
-    # Set up SQS client if the sink has via_sqs enabled
+    # Set up SQS config if the sink has via_sqs enabled
     if consumer.sink.via_sqs do
       # Get SQS configuration directly
       case Sequin.Runtime.HttpPushSqsPipeline.fetch_sqs_config() do
         {:ok, sqs_config} ->
-          # Create SQS client with the configuration
-          sqs_client = create_aws_client(sqs_config)
-          # Store the config in context for SQS operations
+          # Check if using task role (no explicit credentials)
+          use_task_role = is_nil(Map.get(sqs_config, :access_key_id)) or is_nil(Map.get(sqs_config, :secret_access_key))
+
+          # Only create static client if using explicit credentials
+          # Task role credentials need to be refreshed per-request
+          sqs_client =
+            if use_task_role do
+              nil
+            else
+              create_aws_client(sqs_config)
+            end
+
           context
           |> Map.put(:sqs_config, sqs_config)
           |> Map.put(:sqs_client, sqs_client)
+          |> Map.put(:use_task_role, use_task_role)
 
         _ ->
           # If no SQS config available, continue without SQS
@@ -263,7 +273,16 @@ defmodule Sequin.Runtime.HttpPushPipeline do
     Logger.debug("[HttpPushPipeline] Pushing #{length(messages)} messages to SQS for consumer #{consumer.id}")
     message_count = length(messages)
 
-    %{sqs_client: sqs_client} = context
+    %{sqs_config: sqs_config} = context
+
+    # Get or create SQS client - refresh on each call when using task role
+    # to ensure credentials don't expire
+    sqs_client =
+      if Map.get(context, :use_task_role, false) do
+        create_aws_client(sqs_config)
+      else
+        context.sqs_client
+      end
 
     # Extract the raw ConsumerEvent data from each Broadway.Message
     # and convert to binary using erlang.term_to_binary
@@ -303,8 +322,6 @@ defmodule Sequin.Runtime.HttpPushPipeline do
     #   end
 
     # Send to SQS - now sending multiple messages in a batch
-    %{sqs_config: sqs_config} = context
-
     case SQS.send_messages(sqs_client, sqs_config.main_queue_url, sqs_messages) do
       :ok ->
         Logger.debug(

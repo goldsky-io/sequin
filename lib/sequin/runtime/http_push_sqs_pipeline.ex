@@ -420,6 +420,8 @@ defmodule Sequin.Runtime.HttpPushSqsPipeline do
   end
 
   # Resolves AWS credentials from explicit config or ECS task role
+  # When using task role credentials, we only pass region and let ExAws
+  # handle credential refresh automatically via its default credential chain.
   defp resolve_aws_credentials(sqs_config, region) do
     access_key_id = Map.get(sqs_config, :access_key_id)
     secret_access_key = Map.get(sqs_config, :secret_access_key)
@@ -432,25 +434,9 @@ defmodule Sequin.Runtime.HttpPushSqsPipeline do
         region: region
       ]
     else
-      # Fetch credentials from ECS task role
-      case Sequin.Aws.get_credentials() do
-        {:ok, credentials} ->
-          config = [
-            access_key_id: Map.fetch!(credentials, :access_key_id),
-            secret_access_key: Map.fetch!(credentials, :secret_access_key),
-            region: region
-          ]
-
-          # Add session token if present (for temporary credentials)
-          # ExAws expects :security_token, not :token
-          case Map.get(credentials, :token) do
-            nil -> config
-            token -> Keyword.put(config, :security_token, token)
-          end
-
-        {:error, reason} ->
-          raise "Failed to get AWS credentials: #{inspect(reason)}"
-      end
+      # Let ExAws use its default credential chain (includes ECS task role)
+      # This handles automatic credential refresh when tokens expire
+      [region: region]
     end
   end
 end
