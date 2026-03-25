@@ -252,11 +252,14 @@ defmodule Sequin.Runtime.SlotProducer do
       {:noreply, [], state}
     else
       error ->
-        reason =
+        {reason, protocol} =
           case error do
-            {:error, msg} -> msg
-            {:error, msg, %Protocol{}} -> msg
+            {:error, msg} -> {msg, nil}
+            {:error, msg, %Protocol{} = p} -> {msg, p}
+            {:disconnect, msg, %Protocol{} = p} -> {msg, p}
           end
+
+        if protocol, do: Protocol.disconnect(%RuntimeError{}, protocol)
 
         error_msg = if is_exception(reason), do: Exception.message(reason), else: inspect(reason)
         Logger.error("[SlotProducer] replication connect failed: #{error_msg}")
@@ -632,19 +635,19 @@ defmodule Sequin.Runtime.SlotProducer do
             cursor = %{commit_lsn: Postgres.lsn_to_int(lsn), commit_idx: 0}
             {:ok, %{state | restart_wal_cursor: cursor}, protocol}
 
-          {:ok, _res} ->
+          {:ok, _res, protocol} ->
             {:error,
              Error.not_found(
                entity: :source_replication_slot,
                message: "Error fetching metadata about the replication slot from Postgres"
-             )}
+             ), protocol}
 
-          error ->
+          {_error_or_disconnect, err, protocol} ->
             {:error,
              Error.service(
                service: :source_postgres,
-               message: "Error fetching metadata about the replication slot from Postgres (#{inspect(error)})"
-             )}
+               message: "Error fetching metadata about the replication slot from Postgres (#{inspect(err)})"
+             ), protocol}
         end
 
       {:ok, cursor} ->
