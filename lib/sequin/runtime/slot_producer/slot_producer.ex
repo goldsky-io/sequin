@@ -301,6 +301,11 @@ defmodule Sequin.Runtime.SlotProducer do
     send_ack(state)
   end
 
+  def handle_info(:update_restart_wal_cursor, %State{status: :disconnected} = state) do
+    state = schedule_update_cursor(%{state | restart_wal_cursor_update_timer: nil})
+    {:noreply, [], state}
+  end
+
   def handle_info(:update_restart_wal_cursor, %State{} = state) do
     state = update_restart_wal_cursor(state)
 
