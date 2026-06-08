@@ -368,7 +368,11 @@ defmodule Sequin.Prometheus do
     Gauge.set([name: :sequin_messages_buffered, labels: [consumer_id, consumer_name]], count)
   end
 
-  @spec set_slot_processor_server_busy_percent(replication_slot_id :: String.t(), slot_name :: String.t(), percent :: number()) ::
+  @spec set_slot_processor_server_busy_percent(
+          replication_slot_id :: String.t(),
+          slot_name :: String.t(),
+          percent :: number()
+        ) ::
           :ok
   def set_slot_processor_server_busy_percent(replication_slot_id, slot_name, percent) do
     Gauge.set([name: :sequin_slot_processor_server_busy_percent, labels: [replication_slot_id, slot_name]], percent)
