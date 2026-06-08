@@ -125,6 +125,13 @@ defmodule Sequin.Runtime.SlotProducer do
       field :ack_timer, reference()
       field :last_dispatched_wal_cursor, Replication.wal_cursor()
 
+      # Latest "current end of WAL" reported by the server (seeded by the init query, then
+      # refreshed by every keepalive). Used to clamp the restart cursor so we never persist or
+      # ack an LSN ahead of WAL the server has actually generated. A cursor ahead of current WAL
+      # is physically impossible and poisons the slot after an LSN reset (a major-version
+      # blue/green upgrade, snapshot restore, or PITR all reset the LSN counter to a lower value).
+      field :wal_end, integer() | nil
+
       # Batches
       field :batch_idx, BatchMarker.idx(), default: 0
 
@@ -514,7 +521,7 @@ defmodule Sequin.Runtime.SlotProducer do
       Logger.debug(log, log_meta)
     end
 
-    {:ok, state}
+    {:ok, %{state | wal_end: wal_end}}
   end
 
   defp handle_data(type, _msg, %State{} = state) do
@@ -539,9 +546,31 @@ defmodule Sequin.Runtime.SlotProducer do
       raise "[SlotProducer] restart_wal_cursor is empty"
     end
 
-    Replication.put_restart_wal_cursor!(state.id, restart_wal_cursor)
+    if cursor_ahead_of_wal_end?(restart_wal_cursor, state.wal_end) do
+      # The candidate cursor is ahead of the server's current WAL end. This is physically
+      # impossible under normal operation and indicates the source LSN was reset (e.g. an Aurora
+      # blue/green major-version upgrade, snapshot restore, or PITR). Acking it would advance
+      # confirmed_flush_lsn past the WAL the server actually holds and silently drop every
+      # post-reset write. Hold the cursor at its current (valid) position instead.
+      #
+      # The candidate typically comes from a stale-high commit_lsn on a message still buffered in
+      # the message store. Those buffered payloads are still valid and are delivered downstream
+      # untouched; only the slot ack is clamped here.
+      Logger.warning(
+        "[SlotProducer] Refusing to advance restart cursor past current WAL end " <>
+          "(candidate=#{restart_wal_cursor.commit_lsn} wal_end=#{state.wal_end}); likely an LSN reset on the source database",
+        candidate_commit_lsn: restart_wal_cursor.commit_lsn,
+        wal_end: state.wal_end
+      )
 
-    %{state | restart_wal_cursor: restart_wal_cursor}
+      put_cursor_clamped_event(state, restart_wal_cursor.commit_lsn)
+
+      state
+    else
+      Replication.put_restart_wal_cursor!(state.id, restart_wal_cursor)
+
+      %{state | restart_wal_cursor: restart_wal_cursor}
+    end
   end
 
   defp message_from_binary(%State{commit_lsn: nil}, msg) do
@@ -631,32 +660,74 @@ defmodule Sequin.Runtime.SlotProducer do
   defp maybe_toggle_buffering(%State{status: :active} = state), do: state
 
   defp init_restart_wal_cursor(%State{} = state, protocol) do
-    query = "select restart_lsn from pg_replication_slots where slot_name = '#{state.slot_name}'"
+    # Fetch the slot's restart_lsn alongside the server's current WAL end. We need both so we can
+    # (a) seed wal_end before the first keepalive arrives and (b) detect and discard a cached
+    # cursor that sits ahead of the WAL the server actually holds. The recovery-aware expression
+    # mirrors `Postgres.replication_lag_bytes/2` so the query also works on a standby.
+    query =
+      "select restart_lsn, case when pg_is_in_recovery() then pg_last_wal_receive_lsn() else pg_current_wal_lsn() end " <>
+        "from pg_replication_slots where slot_name = '#{state.slot_name}'"
 
+    case Protocol.handle_simple(query, [], protocol) do
+      {:ok, [%Postgrex.Result{rows: [[restart_lsn, current_wal_lsn]]}], protocol} ->
+        restart_lsn = if not is_nil(restart_lsn), do: Postgres.lsn_to_int(restart_lsn)
+        current_wal_lsn = if not is_nil(current_wal_lsn), do: Postgres.lsn_to_int(current_wal_lsn)
+
+        resolve_init_restart_wal_cursor(%{state | wal_end: current_wal_lsn}, restart_lsn, current_wal_lsn, protocol)
+
+      {:ok, _res, protocol} ->
+        {:error, Error.not_found(entity: :source_replication_slot), protocol}
+
+      {_error_or_disconnect, err, protocol} ->
+        {:error,
+         Error.service(
+           service: :source_postgres,
+           message: "Error fetching metadata about the replication slot from Postgres (#{inspect(err)})"
+         ), protocol}
+    end
+  end
+
+  defp resolve_init_restart_wal_cursor(%State{} = state, restart_lsn, current_wal_lsn, protocol) do
     case Replication.restart_wal_cursor(state.id) do
       {:error, %NotFoundError{}} ->
-        case Protocol.handle_simple(query, [], protocol) do
-          {:ok, [%Postgrex.Result{rows: [[lsn]]}], protocol} when not is_nil(lsn) ->
-            cursor = %{commit_lsn: Postgres.lsn_to_int(lsn), commit_idx: 0}
-            {:ok, %{state | restart_wal_cursor: cursor}, protocol}
-
-          {:ok, _res, protocol} ->
-            {:error,
-             Error.not_found(
-               entity: :source_replication_slot,
-               message: "Error fetching metadata about the replication slot from Postgres"
-             ), protocol}
-
-          {_error_or_disconnect, err, protocol} ->
-            {:error,
-             Error.service(
-               service: :source_postgres,
-               message: "Error fetching metadata about the replication slot from Postgres (#{inspect(err)})"
-             ), protocol}
+        # No cached cursor: seed from the slot's actual restart_lsn (Postgres' own position).
+        if is_nil(restart_lsn) do
+          {:error, Error.not_found(entity: :source_replication_slot), protocol}
+        else
+          {:ok, %{state | restart_wal_cursor: %{commit_lsn: restart_lsn, commit_idx: 0}}, protocol}
         end
 
       {:ok, cursor} ->
-        {:ok, %{state | restart_wal_cursor: cursor}, protocol}
+        {:ok, %{state | restart_wal_cursor: clamp_cached_init_cursor(state, cursor, restart_lsn, current_wal_lsn)},
+         protocol}
+    end
+  end
+
+  # A cached cursor ahead of the server's current WAL end can only mean the source LSN was reset
+  # (blue/green major-version upgrade, snapshot restore, PITR). Trusting it would skip every
+  # post-reset change as "below the restart cursor", silently dropping data. Discard it and fall
+  # back to the slot's real position (restart_lsn), which self-heals on any LSN reset. When we
+  # cannot determine the WAL end (current_wal_lsn is nil), keep the cached cursor unchanged.
+  defp clamp_cached_init_cursor(%State{} = state, cursor, restart_lsn, current_wal_lsn) do
+    if cursor_ahead_of_wal_end?(cursor, current_wal_lsn) do
+      fallback_lsn = restart_lsn || current_wal_lsn
+      fallback = %{commit_lsn: fallback_lsn, commit_idx: 0}
+
+      Logger.warning(
+        "[SlotProducer] Discarding cached restart cursor ahead of current WAL end " <>
+          "(cached=#{cursor.commit_lsn} wal_end=#{current_wal_lsn}); falling back to slot position #{fallback_lsn}. " <>
+          "Likely an LSN reset on the source database.",
+        cached_commit_lsn: cursor.commit_lsn,
+        wal_end: current_wal_lsn,
+        restart_lsn: restart_lsn,
+        fallback_commit_lsn: fallback_lsn
+      )
+
+      put_cursor_clamped_event(state, cursor.commit_lsn)
+
+      fallback
+    else
+      cursor
     end
   end
 
@@ -732,6 +803,34 @@ defmodule Sequin.Runtime.SlotProducer do
       :postgres_replication_slot,
       id,
       %Event{slug: :replication_connected, status: :success}
+    )
+  end
+
+  # A cursor is "ahead of WAL end" only when we have a known wal_end to compare against and the
+  # cursor's commit_lsn exceeds it. commit_idx is a Sequin-internal sub-position within a commit
+  # and has no analog in the server's wal_end, so we compare on commit_lsn alone.
+  defp cursor_ahead_of_wal_end?(_cursor, nil), do: false
+  defp cursor_ahead_of_wal_end?(%{commit_lsn: commit_lsn}, wal_end), do: commit_lsn > wal_end
+
+  defp put_cursor_clamped_event(%State{} = state, cursor_commit_lsn) do
+    error =
+      Error.service(
+        service: :postgres_replication_slot,
+        message:
+          "Sequin's replication cursor (#{cursor_commit_lsn}) is ahead of the database's current WAL end (#{state.wal_end}). " <>
+            "This means the database's LSN counter was reset — most often by a major-version blue/green upgrade, a snapshot " <>
+            "restore, or point-in-time recovery. Sequin is holding the slot at the current WAL end so it does not skip data."
+      )
+
+    Health.put_event(
+      :postgres_replication_slot,
+      state.id,
+      %Event{
+        slug: :replication_cursor_clamped,
+        status: :warning,
+        error: error,
+        extra: %{cursor_commit_lsn: cursor_commit_lsn, wal_end: state.wal_end}
+      }
     )
   end
 

@@ -158,6 +158,29 @@ defmodule Sequin.HealthTest do
     end
   end
 
+  describe "replication_messages check" do
+    test "surfaces a warning when the slot cursor was recently clamped past WAL end" do
+      entity = postgres_replication()
+
+      # The messages check is only evaluated once the slot is connected.
+      :ok = Health.put_event(entity, %Event{slug: :replication_connected, status: :success})
+
+      {:ok, health} = Health.health(entity)
+      assert Enum.find(health.checks, &(&1.slug == :replication_messages)).status == :initializing
+
+      # An LSN reset (e.g. a major-version blue/green upgrade) causes SlotProducer to clamp the
+      # cursor and emit this warning rather than poisoning the slot.
+      clamp_error = ErrorFactory.service_error()
+      :ok = Health.put_event(entity, %Event{slug: :replication_cursor_clamped, status: :warning, error: clamp_error})
+
+      {:ok, health} = Health.health(entity)
+      check = Enum.find(health.checks, &(&1.slug == :replication_messages))
+      assert check.status == :warning
+      assert check.error == clamp_error
+      assert health.status == :warning
+    end
+  end
+
   describe "to_external/1" do
     test "converts the health to an external format" do
       entity = ConsumersFactory.sink_consumer(id: Factory.uuid(), inserted_at: DateTime.utc_now())

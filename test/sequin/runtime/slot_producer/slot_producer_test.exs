@@ -15,6 +15,8 @@ defmodule Sequin.Runtime.SlotProducerTest do
   alias Sequin.Factory.DatabasesFactory
   alias Sequin.Factory.ReplicationFactory
   alias Sequin.Factory.TestEventLogFactory
+  alias Sequin.Health
+  alias Sequin.Health.Event
   alias Sequin.Postgres
   alias Sequin.Replication
   alias Sequin.Runtime.SlotProducer
@@ -352,6 +354,65 @@ defmodule Sequin.Runtime.SlotProducerTest do
 
       assert msg.kind == :insert
       assert msg.payload =~ "Character 2"
+    end
+
+    @tag skip_start: true
+    test "discards a cached restart cursor ahead of WAL end at init and still delivers changes", %{
+      slot: slot,
+      db: db
+    } do
+      # Simulate the state left behind by an LSN reset (e.g. an Aurora blue/green major-version
+      # upgrade): a cached cursor far ahead of the WAL the (fresh) server actually holds.
+      {:ok, current_lsn} = Postgres.current_wal_lsn(db)
+      poisoned_lsn = current_lsn + 1_000_000_000_000
+      Replication.put_restart_wal_cursor!(slot.id, %{commit_lsn: poisoned_lsn, commit_idx: 0})
+
+      # These changes land below the poisoned cursor but above the slot's real restart_lsn.
+      for i <- 1..3 do
+        CharacterFactory.insert_character!(%{name: "Post Reset #{i}"}, repo: UnboxedRepo)
+      end
+
+      start_slot_producer(slot)
+
+      # If the cached cursor were trusted, every change would be skipped as "below the restart
+      # cursor" (silent data loss). Clamping back to the slot's real position delivers them all.
+      messages = receive_messages(3)
+      assert length(messages) == 3
+      assert Enum.all?(messages, &(&1.kind == :insert))
+      assert messages |> Enum.map(& &1.payload) |> Enum.all?(&(&1 =~ "Post Reset"))
+    end
+
+    @tag skip_start: true
+    test "refuses to advance the restart cursor past the current WAL end", %{slot: slot, db: db} do
+      {:ok, current_lsn} = Postgres.current_wal_lsn(db)
+      poisoned_lsn = current_lsn + 1_000_000_000_000
+
+      # The candidate cursor (normally derived from min_unpersisted_wal_cursor) is stale-high after
+      # a reset. Every update attempt must be clamped rather than acked.
+      start_slot_producer(slot,
+        ack_interval: 1,
+        restart_wal_cursor_update_interval: 1,
+        restart_wal_cursor_fn: fn _id, _last -> %{commit_lsn: poisoned_lsn, commit_idx: 0} end
+      )
+
+      CharacterFactory.insert_character!(%{name: "C1"}, repo: UnboxedRepo)
+      receive_messages(1)
+
+      # The clamp is surfaced via a Health event rather than silently applied or crashing.
+      assert_eventually(
+        match?(
+          {:ok, %Event{slug: :replication_cursor_clamped, status: :warning}},
+          Health.get_event(slot.id, :replication_cursor_clamped)
+        ),
+        1000
+      )
+
+      # The poisoned candidate must never reach Postgres: confirmed_flush_lsn stays at/below WAL end.
+      {:ok, wal_end} = Postgres.current_wal_lsn(db)
+      {:ok, confirmed} = Postgres.confirmed_flush_lsn(db, replication_slot())
+      assert is_integer(confirmed)
+      assert confirmed < poisoned_lsn
+      assert confirmed <= wal_end
     end
 
     @tag start_opts: [processor_opts: [consumer_demand: :manual]]
