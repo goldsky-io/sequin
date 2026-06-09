@@ -380,6 +380,15 @@ defmodule Sequin.Runtime.SlotProducerTest do
       assert length(messages) == 3
       assert Enum.all?(messages, &(&1.kind == :insert))
       assert messages |> Enum.map(& &1.payload) |> Enum.all?(&(&1 =~ "Post Reset"))
+
+      # The init-time clamp is surfaced via a Health event, same as the runtime clamp path.
+      assert_eventually(
+        match?(
+          {:ok, %Event{slug: :replication_cursor_clamped, status: :warning}},
+          Health.get_event(slot.id, :replication_cursor_clamped)
+        ),
+        1000
+      )
     end
 
     @tag skip_start: true
@@ -413,6 +422,60 @@ defmodule Sequin.Runtime.SlotProducerTest do
       assert is_integer(confirmed)
       assert confirmed < poisoned_lsn
       assert confirmed <= wal_end
+    end
+
+    @tag skip_start: true
+    test "advances the cursor for a valid candidate on a healthy slot without clamping", %{
+      slot: slot,
+      db: db
+    } do
+      # Guards that the WAL-end clamp does not over-fire on healthy traffic: a candidate equal to
+      # the commit_lsn of a change the producer actually received (hence <= the WAL end the server
+      # reported on that message) must be acked, not clamped. Complements the "refuses to advance"
+      # test, which proves a genuinely-too-high candidate IS clamped. (This does not isolate the
+      # ?w-vs-keepalive wal_end source -- catch-up keepalives also keep wal_end fresh once the
+      # stream drains; the byte-level ?w extraction is covered by the parse_copy/1 unit tests.)
+      {:ok, wal_end_at_start} = Postgres.current_wal_lsn(db)
+
+      # The test supplies the restart-cursor candidate: nil (no-op) until we learn a real, delivered
+      # commit_lsn, then that commit_lsn. Driving it this way avoids depending on keepalive timing.
+      {:ok, candidate_agent} = Agent.start_link(fn -> nil end)
+
+      start_slot_producer(slot,
+        ack_interval: 5,
+        restart_wal_cursor_update_interval: 5,
+        restart_wal_cursor_fn: fn _id, _last -> Agent.get(candidate_agent, & &1) end
+      )
+
+      for i <- 1..3 do
+        CharacterFactory.insert_character!(%{name: "Healthy #{i}"}, repo: UnboxedRepo)
+      end
+
+      messages = receive_messages(3)
+      assert length(messages) == 3
+      last_commit_lsn = messages |> List.last() |> Map.fetch!(:commit_lsn)
+      # The candidate sits above the stale init wal_end (so the buggy path would clamp it)...
+      assert last_commit_lsn > wal_end_at_start
+
+      # ...but it is a position the server has written and the producer has seen, so it must NOT
+      # be treated as ahead of WAL end once wal_end tracks the ?w stream.
+      Agent.update(candidate_agent, fn _ -> %{commit_lsn: last_commit_lsn, commit_idx: 0} end)
+
+      # The cursor advances to the valid candidate: confirmed_flush_lsn moves past the stale seed.
+      # Without per-message wal_end tracking this stalls (the candidate is clamped) and times out.
+      assert_eventually(
+        case Postgres.confirmed_flush_lsn(db, replication_slot()) do
+          {:ok, confirmed} when is_integer(confirmed) -> confirmed > wal_end_at_start
+          _ -> false
+        end,
+        2000
+      )
+
+      # And no false clamp warning was emitted for this healthy slot.
+      refute match?(
+               {:ok, %Event{slug: :replication_cursor_clamped}},
+               Health.get_event(slot.id, :replication_cursor_clamped)
+             )
     end
 
     @tag start_opts: [processor_opts: [consumer_demand: :manual]]
@@ -527,6 +590,37 @@ defmodule Sequin.Runtime.SlotProducerTest do
     #   # Clean up
     #   GenStage.stop(producer_pid)
     # end
+  end
+
+  describe "parse_copy/1 (wal_end extraction)" do
+    test "extracts the server's current WAL end from an XLogData (?w) frame" do
+      # XLogData header: Byte1('w'), Int64 wal_start, Int64 wal_end, Int64 clock, then the message.
+      inner = <<?I, 1, 2, 3, 4>>
+      frame = <<?w, 4_242::64, 9_876_543::64, 111_222::64, inner::binary>>
+
+      assert {?I, ^inner, 9_876_543} = SlotProducer.parse_copy(frame)
+    end
+
+    test "reports no wal_end for a keepalive (?k) frame (the ?k handler sets it instead)" do
+      frame = <<?k, 555::64, 111::64, 0>>
+
+      assert {?k, ^frame, nil} = SlotProducer.parse_copy(frame)
+    end
+  end
+
+  describe "bound_lsn_by_wal_end/2" do
+    test "caps an lsn at the wal_end (the #6 defense-in-depth)" do
+      assert SlotProducer.bound_lsn_by_wal_end(100, 80) == 80
+      assert SlotProducer.bound_lsn_by_wal_end(60, 80) == 60
+    end
+
+    test "passes the lsn through when wal_end is unknown (e.g. a standby)" do
+      assert SlotProducer.bound_lsn_by_wal_end(100, nil) == 100
+    end
+
+    test "falls back to wal_end when the lsn is nil" do
+      assert SlotProducer.bound_lsn_by_wal_end(nil, 80) == 80
+    end
   end
 
   defp receive_messages(count, acc \\ []) do
