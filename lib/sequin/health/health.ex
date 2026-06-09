@@ -594,6 +594,7 @@ defmodule Sequin.Health do
     messages_processed_event = find_event(events, :replication_message_processed)
     heartbeat_recv_event = find_event(events, :replication_heartbeat_received)
     replication_lag_checked_event = find_event(events, :replication_lag_checked)
+    cursor_clamped_event = find_event(events, :replication_cursor_clamped)
 
     no_recent_heartbeats? =
       is_nil(heartbeat_recv_event) or Time.before_min_ago?(heartbeat_recv_event.last_event_at, 10)
@@ -619,6 +620,15 @@ defmodule Sequin.Health do
              DateTime.after?(messages_processed_event.last_event_at, heartbeat_recv_event.last_event_at)) ->
         put_check_timestamps(%{base_check | status: :error, error: messages_processed_event.error}, [
           messages_processed_event
+        ])
+
+      # Sequin recently refused to advance the slot cursor past the server's WAL end, which means
+      # the source LSN was reset (major-version blue/green upgrade, snapshot restore, or PITR).
+      # Surface it while it is recent; it auto-clears once clamping stops being re-emitted.
+      not is_nil(cursor_clamped_event) and cursor_clamped_event.status == :warning and
+          not Time.before_min_ago?(cursor_clamped_event.last_event_at, 30) ->
+        put_check_timestamps(%{base_check | status: :warning, error: cursor_clamped_event.error}, [
+          cursor_clamped_event
         ])
 
       not is_nil(replication_lag_checked_event) and replication_lag_checked_event.status == :warning ->

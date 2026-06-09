@@ -37,7 +37,8 @@ defmodule Sequin.Health.Event do
     :replication_heartbeat_received,
     :replication_heartbeat_verification,
     :replication_memory_limit_exceeded,
-    :replication_lag_checked
+    :replication_lag_checked,
+    :replication_cursor_clamped
   ]
 
   @sink_consumer_event_slugs [

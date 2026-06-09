@@ -158,6 +158,62 @@ defmodule Sequin.HealthTest do
     end
   end
 
+  describe "replication_messages check" do
+    test "surfaces a warning when the slot cursor was recently clamped past WAL end" do
+      entity = postgres_replication()
+
+      # The messages check is only evaluated once the slot is connected.
+      :ok = Health.put_event(entity, %Event{slug: :replication_connected, status: :success})
+
+      {:ok, health} = Health.health(entity)
+      assert Enum.find(health.checks, &(&1.slug == :replication_messages)).status == :initializing
+
+      # An LSN reset (e.g. a major-version blue/green upgrade) causes SlotProducer to clamp the
+      # cursor and emit this warning rather than poisoning the slot.
+      clamp_error = ErrorFactory.service_error()
+      :ok = Health.put_event(entity, %Event{slug: :replication_cursor_clamped, status: :warning, error: clamp_error})
+
+      {:ok, health} = Health.health(entity)
+      check = Enum.find(health.checks, &(&1.slug == :replication_messages))
+      assert check.status == :warning
+      assert check.error == clamp_error
+      assert health.status == :warning
+    end
+
+    test "stops warning once the clamp event is older than 30 minutes" do
+      clamp_error = ErrorFactory.service_error()
+
+      # Fresh side of the 30-minute boundary: a recent clamp warning surfaces on the check.
+      fresh_entity = postgres_replication()
+      :ok = Health.put_event(fresh_entity, %Event{slug: :replication_connected, status: :success})
+
+      :ok =
+        Health.put_event(fresh_entity, %Event{slug: :replication_cursor_clamped, status: :warning, error: clamp_error})
+
+      {:ok, fresh_health} = Health.health(fresh_entity)
+      assert Enum.find(fresh_health.checks, &(&1.slug == :replication_messages)).status == :warning
+
+      # Stale side: a distinct slot whose clamp event last fired ~31 minutes ago. We backdate by
+      # traveling Sequin.utc_now/0 (which Event.set_timestamps/2 reads to stamp last_event_at)
+      # before the single emit, then restore real time. A separate entity avoids the put_event
+      # debounce, which would otherwise drop a same-hash re-emit within the debounce window.
+      stale_entity = postgres_replication()
+      :ok = Health.put_event(stale_entity, %Event{slug: :replication_connected, status: :success})
+
+      thirty_one_min_ago = DateTime.add(DateTime.utc_now(), -31, :minute)
+      stub_utc_now(fn -> thirty_one_min_ago end)
+
+      :ok =
+        Health.put_event(stale_entity, %Event{slug: :replication_cursor_clamped, status: :warning, error: clamp_error})
+
+      stub_utc_now(fn -> DateTime.utc_now() end)
+
+      # Older than the 30-minute window, the clamp warning no longer surfaces on the check.
+      {:ok, stale_health} = Health.health(stale_entity)
+      assert Enum.find(stale_health.checks, &(&1.slug == :replication_messages)).status != :warning
+    end
+  end
+
   describe "to_external/1" do
     test "converts the health to an external format" do
       entity = ConsumersFactory.sink_consumer(id: Factory.uuid(), inserted_at: DateTime.utc_now())
