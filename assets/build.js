@@ -21,6 +21,9 @@ let optsClient = {
   sourcemap: watch ? "inline" : false,
   watch,
   tsconfig: "./tsconfig.json",
+  // @getkoala/browser's published dist imports `lodash/throttle` (CJS lodash),
+  // but we only ship the patched lodash-es. esbuild remaps subpaths too.
+  alias: { lodash: "lodash-es" },
   loader: {
     ".svg": "dataurl",
     ".mdx": "text",
@@ -63,6 +66,7 @@ let optsServer = {
   sourcemap: watch ? "inline" : false,
   watch,
   tsconfig: "./tsconfig.json",
+  alias: { lodash: "lodash-es" },
   loader: {
     ".svg": "dataurl",
     ".mdx": "text",
