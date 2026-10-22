@@ -10,7 +10,7 @@ ARG RUNNER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${
 ARG SELF_HOSTED=0
 
 # ---- CLI Build Stage ----
-FROM golang:1.24.2-bullseye AS cli-builder
+FROM golang:1.26.10-bookworm AS cli-builder
 
 ARG SEQUIN_CLI_VERSION=0.13.1
 RUN git clone --depth 1 --branch v${SEQUIN_CLI_VERSION} https://github.com/sequinstream/sequin.git /tmp/sequin \
@@ -103,8 +103,11 @@ FROM ${RUNNER_IMAGE} AS app
 
 # Install additional packages
 # Do this before setting RELEASE_VERSION which changes on every build
+# Asserted because a cached apt layer would silently keep a bundle that still trusts the compromised eMudhra intermediates.
+ARG CA_CERTIFICATES_MIN_VERSION=20250419~deb12u2
 RUN apt-get update -y && \
     apt-get install -y libstdc++6 openssl libncurses5 locales ca-certificates curl ssh jq telnet netcat-openbsd htop vim \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge "$CA_CERTIFICATES_MIN_VERSION" \
     && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 # Copy the Sequin CLI from the cli-builder stage
