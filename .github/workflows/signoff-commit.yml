@@ -17,7 +17,7 @@ on:
 jobs:
   signoff-checks:
     name: signoff
-    runs-on: warp-ubuntu-latest-arm64-32x
+    runs-on: ubuntu-latest
 
     services:
       postgres:
@@ -71,7 +71,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.11.0'
+          node-version-file: '.tool-versions'
           cache: 'npm'
           cache-dependency-path: 'assets/package-lock.json'
 
@@ -82,14 +82,14 @@ jobs:
           check-latest: true
 
       - name: Cache Elixir deps
-        uses: WarpBuilds/cache@v1
+        uses: actions/cache@v4
         with:
           path: deps
           key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
           restore-keys: ${{ runner.os }}-mix-
 
       - name: Cache build artifacts
-        uses: WarpBuilds/cache@v1
+        uses: actions/cache@v4
         with:
           path: _build
           key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
