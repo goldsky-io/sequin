@@ -13,6 +13,12 @@ This log is updated every Friday to track our feature releases and updates week 
 > [!NOTE]
 For notes on Docker and CLI version releases, see the [GitHub Releases](https://github.com/sequinstream/sequin/releases) page.
 
+## November 2, 2026
+
+### Security
+
+* Update CAStore to 1.0.22 so its fallback TLS certificate bundle no longer trusts emSign ECC Root CA - G3 or AAA Certificate Services.
+
 ## July 11, 2025
 [v0.12.2...v0.12.11](https://github.com/sequinstream/sequin/releases/tag/v0.12.11)
 
