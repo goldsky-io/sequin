@@ -1219,6 +1219,23 @@ defmodule Sequin.PostgresReplicationTest do
       check = Enum.find(health.checks, &(&1.slug == :replication_messages))
       assert check.status == :healthy
     end
+
+    @tag capture_log: true
+    test "re-emits a heartbeat when the outstanding one was skipped by the slot", %{pg_replication: pg_replication} do
+      start_replication!(pg_replication, [])
+
+      assert_receive {SlotProcessorServer, :heartbeat_received}, 1000
+
+      # Simulate an outstanding heartbeat the slot already streamed past, as after a rolling deploy.
+      :sys.replace_state(SlotProcessorServer.via_tuple(pg_replication.id), fn state ->
+        Process.cancel_timer(state.heartbeat_timer)
+        %{state | heartbeat_timer: nil, current_heartbeat_id: UUID.uuid4(), heartbeat_emitted_lsn: 0}
+      end)
+
+      send(GenServer.whereis(SlotProcessorServer.via_tuple(pg_replication.id)), :verify_heartbeat)
+
+      assert_receive {SlotProcessorServer, :heartbeat_received}, 1000
+    end
   end
 
   describe "PostgresReplicationSlot end-to-end with sequences" do

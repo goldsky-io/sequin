@@ -393,7 +393,8 @@ defmodule Sequin.Runtime.SlotProcessorServer do
           }
         )
 
-        {:noreply, next_state}
+        # The slot streamed past this heartbeat (e.g. a previous owner consumed it), so it will never arrive.
+        {:noreply, schedule_heartbeat(next_state, 0)}
 
       {:error, :stale_connection} ->
         max_receive_timeout_min = max_heartbeat_receive_timeout_min()
